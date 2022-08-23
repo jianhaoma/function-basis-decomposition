@@ -244,15 +244,6 @@ def load_architecture(arch_id: str, dataset_name: str, scale_initial: float) -> 
         model.maxpool = nn.Identity()
         return model
 
-model = torchvision.models.wide_resnet50_2(pretrained=False, num_classes=10)
-model.conv1 = nn.Conv2d(3,
-                    64,
-                    kernel_size=(3, 3),
-                    stride=(1, 1),
-                    padding=(1, 1),
-                    bias=False)
-model.maxpool = nn.Identity()
-
 # load training data
 def load_train_data(batch_size, param_mean, param_std, num_workers):
     transform_train = transforms.Compose([
