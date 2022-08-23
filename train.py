@@ -138,7 +138,7 @@ def make_one_layer_network(h=10, seed=0, activation='tanh', sigma_w=1.9):
     nn.init.xavier_normal_(network[2].weight)
     return network
 
-def load_architecture(arch_id: str, dataset_name: str, scale_initial: float) -> nn.Module:
+def load_architecture(arch_id: str, dataset_name: str) -> nn.Module:
     #  ======   fully-connected networks =======
     if arch_id == 'fc-relu':
         return fully_connected_net(dataset_name, [200, 200], 'relu', bias=True)
@@ -320,6 +320,15 @@ def initial_test(model, val_loader, device):
             f_out = torch.vstack((f_out, outputs.detach().cpu()))
     return f_out
 
+def init_scale(model, scale):
+    state_dict = model.state_dict()
+    for i in range(len(state_dict.keys())):
+        name = list(model.state_dict())[i]
+        state_dict[name] = state_dict[name]*scale
+    model.load_state_dict(state_dict)
+    return model
+        
+
 def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args):
     model_name=args.model
     call_wandb=args.call_wandb
@@ -346,7 +355,7 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
         end = int(np.log(args.lr/args.init_lr)/np.log(exp_rate))
         scheduler1 = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
     elif args.warmup == 'linear':
-        lin_rate = 0.09/50
+        lin_rate = (args.lr - args.init_lr)/args.warmtime
         lambda1 = lambda epoch: args.init_lr+lin_rate*epoch
         end = int((args.lr-args.init_lr)/lin_rate)
         scheduler1 = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
@@ -356,7 +365,8 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
         scheduler1 = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
     elif args.warmup == 'none':
         lambda1 = lambda epoch: args.lr
-        end = 1
+        end = 0
+        scheduler1 = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
     scheduler2 = torch.optim.lr_scheduler.StepLR(optimizer,
                                                 step_size=args.decay_stepsize,
                                                 gamma=args.decay_rate)
@@ -469,6 +479,7 @@ def arg_parser():
     parser.add_argument('--lr', default=1e-1, type=float, help='learning rate')
     parser.add_argument('--init_lr', default=1e-2, type=float, help='initial learning rate')
     parser.add_argument('--warmup', default='none', help='different warm up lr schemes')
+    parser.add_argument('--warmtime', default=100, help='warm up lr time')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--batch_size', default=512, type=int, help='batch size')
     parser.add_argument('--num_epoch', default=310, type=int, help='number of epoch')
@@ -478,8 +489,8 @@ def arg_parser():
     parser.add_argument('--decay_stepsize', default=50, type=int, help='the decay time')
     parser.add_argument('--num_run', default=0, type=int, help='the number of run')
     parser.add_argument('--call_wandb', default=False, type=bool, help='connect with wandb or not')
-    parser.add_argument('--scale_initial', default=1, type=float, help='scale model initial parameter')
-
+    parser.add_argument('--init_scale', default=1, type=float, help='scale model initial parameter')
+    parser.add_argument('--loss_fn', default='mse_loss', help='loss type')
     args = parser.parse_args()
     return args
 
@@ -512,7 +523,6 @@ def main():
     classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse',
                'ship', 'truck')
     LR = args.lr
-    scale_initial = args.scale_initial
     # load data and model to device
     param_mean = (0.4914, 0.4822, 0.4465)
     param_std = (0.2471, 0.2435, 0.2616
@@ -521,13 +531,14 @@ def main():
                                    num_workers)
     val_loader = load_test_data(batch_size, param_mean, param_std, num_workers)
     device = get_default_device()
-    model = load_architecture(args.model, args.data, scale_initial)
-
+    model = load_architecture(args.model, args.data)
     # model = create_model().to(device)
-    model.to(device)
+    init_scale(model, args.init_scale).to(device)
     #reinitialize model parameters
-
-    criterion = nn.MSELoss()
+    if args.loss_fn == 'mse_loss':
+        criterion = nn.MSELoss()
+    elif args.loss_fn == 'cross_entropy':
+        criterion = nn.CrossEntropyLoss()
     # Start Training model, train_dl, vali_dl, EPOCH, criterion, optimizer, scheduler
 
     init_f_out = initial_test(model, val_loader, device)
@@ -535,7 +546,7 @@ def main():
 
     F_out[:, :, 0] = init_f_out
     # save model
-    dir_name = args.model+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr)+'-init-scale'+str(args.scale_initial)+'-'+time
+    dir_name = args.model+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+args.warmup+str(args.lr)+'-init-scale'+str(args.init_scale)+'-'+time
 
     os.makedirs(dir_name)
     torch.save(model.state_dict(), dir_name+'/'+args.model)
