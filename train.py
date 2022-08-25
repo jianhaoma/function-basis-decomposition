@@ -17,6 +17,7 @@ Original file is located at
 # codes using gradual warm up lr strategy.
 # imports
 import wandb
+import flash
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -31,6 +32,7 @@ import matplotlib.pyplot as plt
 import copy
 from IPython.display import clear_output
 from typing import List
+from flash.core.optimizers import LARS
 import os
 import argparse
 
@@ -206,13 +208,13 @@ def load_architecture(arch_id: str, dataset_name: str) -> nn.Module:
         return model
     elif arch_id == 'vgg11':
         model = torchvision.models.vgg11(pretrained=False, num_classes=10)
-        model.conv1 = nn.Conv2d(3,
+        model.features[0] = nn.Conv2d(3,
                                 64,
                                 kernel_size=(3, 3),
                                 stride=(1, 1),
                                 padding=(1, 1),
                                 bias=False)
-        model.maxpool = nn.Identity()
+        model.features[2] = nn.Identity()
         # initial value
         return model
     elif arch_id == 'alexnet':
@@ -223,7 +225,7 @@ def load_architecture(arch_id: str, dataset_name: str) -> nn.Module:
                             stride=(1, 1),
                             padding=(1, 1),
                             bias=False)
-        model.maxpool = nn.Identity()
+        model.features[2] = nn.Identity()
         return model
     elif arch_id == 'vision-transformer':
         model = torchvision.models.vit_b_16(pretrained=False, num_classes=10)
@@ -233,7 +235,7 @@ def load_architecture(arch_id: str, dataset_name: str) -> nn.Module:
                                 stride=(1, 1),
                                 padding=(1, 1),
                                 bias=False)
-        model.maxpool = nn.Identity()
+        #model.maxpool = nn.Identity()
         return model
     elif arch_id == 'wide-resnet':
         model = torchvision.models.wide_resnet50_2(pretrained=False, num_classes=10)
@@ -244,6 +246,15 @@ def load_architecture(arch_id: str, dataset_name: str) -> nn.Module:
                                 padding=(1, 1),
                                 bias=False)
         model.maxpool = nn.Identity()
+        return model
+    elif arch_id == 'swimnet':
+        model = torchvision.models.swin_t(weights=None, num_classes=10)
+        model.features[0][0] = nn.Conv2d(3,
+                                64,
+                                kernel_size=(3, 3),
+                                stride=(1, 1),
+                                padding=(1, 1),
+                                bias=False)
         return model
 
 # load training data
@@ -344,24 +355,30 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
     name = model_name
     F_out = torch.zeros((10000, 10, 1))
     train_loss = []
+    train_acc = []
+    test_acc_ = []
 
-    optimizer = torch.optim.SGD(model.parameters(),
+    if args.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(),
                                 lr=args.init_lr,
                                 momentum=0.9,
                                 weight_decay=1e-4)
+    elif args.optimizer == 'lars':
+        optimizer = LARS(model.parameters(), lr=args.init_lr, momentum=0.9, weight_decay=1e-4)
+
     if args.warmup == 'exp':
         exp_rate = 1.05
         lambda1 = lambda epoch: args.init_lr*exp_rate**epoch
         end = int(np.log(args.lr/args.init_lr)/np.log(exp_rate))
         scheduler1 = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
     elif args.warmup == 'linear':
-        lin_rate = (args.lr - args.init_lr)/args.warmtime
+        lin_rate = (args.lr - args.init_lr)/(args.warmtime-1)
         lambda1 = lambda epoch: args.init_lr+lin_rate*epoch
-        end = int((args.lr-args.init_lr)/lin_rate)
+        end = args.warmtime
         scheduler1 = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
     elif args.warmup == 'constant':
         lambda1 = lambda epoch: args.init_lr
-        end = 50
+        end = 5
         scheduler1 = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
     elif args.warmup == 'none':
         lambda1 = lambda epoch: args.lr
@@ -399,6 +416,7 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
                     train_log(loss, example_ct, epoch)
         train_loss.append(sum_loss)
         training_acc = correct / total
+        train_acc.append(training_acc)
         # print('[epoch:%d] Loss: %.05f | Acc: %.2f%%' %
         #       (epoch + 1, sum_loss, 100. * training_acc))
         # training_accs.append(training_acc)
@@ -434,6 +452,7 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
                     FEATS.append(features[feature_name].cpu().numpy())
             F_out = torch.cat([F_out, torch.unsqueeze(f_out, 2)], dim=2)
             test_acc = correct / total
+            test_acc_.append(test_acc)
             # test_accs.append(test_acc)
             if call_wandb:
                 wandb.log({"test_accuracy": test_acc})
@@ -471,15 +490,15 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
         # plt.savefig('resnet_18_v2')
         # plt.clf()
 
-    return model, best_acc, beta, phi, F_out, train_loss
+    return model, best_acc, beta, phi, F_out, train_loss, train_acc, test_acc_
 
 def arg_parser():
     # parsers
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training VGG')
     parser.add_argument('--lr', default=1e-1, type=float, help='learning rate')
     parser.add_argument('--init_lr', default=1e-2, type=float, help='initial learning rate')
-    parser.add_argument('--warmup', default='none', help='different warm up lr schemes')
-    parser.add_argument('--warmtime', default=100, help='warm up lr time')
+    parser.add_argument('--warmup', default='none', help='warm up lr schemes')
+    parser.add_argument('--warmtime', default=5, type=int, help='warm up lr time')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--batch_size', default=512, type=int, help='batch size')
     parser.add_argument('--num_epoch', default=310, type=int, help='number of epoch')
@@ -491,6 +510,7 @@ def arg_parser():
     parser.add_argument('--call_wandb', default=False, type=bool, help='connect with wandb or not')
     parser.add_argument('--init_scale', default=1, type=float, help='scale model initial parameter')
     parser.add_argument('--loss_fn', default='mse_loss', help='loss type')
+    parser.add_argument('--optimizer', default='sgd', help='optimizer type')
     args = parser.parse_args()
     return args
 
@@ -542,11 +562,11 @@ def main():
     # Start Training model, train_dl, vali_dl, EPOCH, criterion, optimizer, scheduler
 
     init_f_out = initial_test(model, val_loader, device)
-    model, best_acc, beta, Phi, F_out, train_loss = model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
+    model, best_acc, beta, Phi, F_out, train_loss, train_acc, test_acc_ = model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
 
     F_out[:, :, 0] = init_f_out
     # save model
-    dir_name = args.model+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+args.warmup+str(args.lr)+'-init-scale'+str(args.init_scale)+'-'+time
+    dir_name = args.model+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+args.warmup+str(args.lr)+'-init-scale'+str(args.init_scale)+'loss-'+args.loss_fn+'wp'+args.warmup+'-'+time
 
     os.makedirs(dir_name)
     torch.save(model.state_dict(), dir_name+'/'+args.model)
@@ -577,7 +597,45 @@ def main():
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(dir_name+'/'+args.model+'train_loss')
+    plt.savefig(dir_name+'/'+args.model+'train_loss.pdf')
     plt.clf()
+
+    plt.plot(train_acc, linewidth=2, label='train acc')
+    plt.locator_params(axis='x', nbins=8)
+    plt.legend(prop={'size': 10})
+    axes = plt.gca()
+    plt.xlabel("epoch", color='k')
+    plt.legend(loc='best', prop={'size': 18})
+    plt.title('training accuracy')
+    axes = plt.gca()
+    axes.xaxis.label.set_size(18)
+    axes.yaxis.label.set_size(18)
+    plt.xticks(color='k', fontsize=14)
+    plt.yticks(color='k', fontsize=14)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(dir_name+'/'+args.model+'train_acc')
+    plt.savefig(dir_name+'/'+args.model+'train_acc.pdf')
+    plt.clf()
+
+    plt.plot(test_acc_, linewidth=2, label='test acc')
+    plt.locator_params(axis='x', nbins=8)
+    plt.legend(prop={'size': 10})
+    axes = plt.gca()
+    plt.xlabel("epoch", color='k')
+    plt.legend(loc='best', prop={'size': 18})
+    plt.title('test acc')
+    axes = plt.gca()
+    axes.xaxis.label.set_size(18)
+    axes.yaxis.label.set_size(18)
+    plt.xticks(color='k', fontsize=14)
+    plt.yticks(color='k', fontsize=14)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(dir_name+'/'+args.model+'test_acc')
+    plt.savefig(dir_name+'/'+args.model+'test_acc.pdf')
+    plt.clf()
+
 
     U, S, V = torch.svd(Phi)
     beta_star = torch.matmul(beta, V)
@@ -611,6 +669,7 @@ def main():
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(dir_name+'/'+args.model+'beta-5')
+    plt.savefig(dir_name+'/'+args.model+'beta-5.pdf')
     plt.clf()
 
     for i in range(20):
@@ -634,6 +693,7 @@ def main():
     plt.yticks(color='k', fontsize=14)
     plt.grid(True)
     plt.savefig(dir_name+'/'+args.model+'beta-20')
+    plt.savefig(dir_name+'/'+args.model+'beta-20.pdf')
     return
 
 if __name__ == "__main__":  
