@@ -35,6 +35,11 @@ from typing import List
 from flash.core.optimizers import LARS
 import os
 import argparse
+from nngeometry.object.fspace import FMatDense
+from nngeometry.object.vector import FVector
+from nngeometry.object import PMatImplicit
+from nngeometry.generator import Jacobian
+from nngeometry.layercollection import LayerCollection
 
 # Define Data Loaders
 _CONV_OPTIONS = {"kernel_size": 3, "padding": 1, "stride": 1}
@@ -357,6 +362,7 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
     train_loss = []
     train_acc = []
     test_acc_ = []
+    grad_norm = []
 
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(),
@@ -440,6 +446,10 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
         with torch.no_grad():
             correct, total = 0, 0
             num_batch = len(val_loader)
+            if args.gradient:
+                lc = LayerCollection.from_model(model)
+                Jac = Jacobian(model, n_output=10, centering=True, layer_collection=lc)
+                grad_norm_ = 0
             for _, data in enumerate(val_loader, 0):
                 inputs, labels = data
                 inputs, labels = inputs.to(device), labels.to(device)
@@ -450,9 +460,13 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
                 f_out = torch.vstack((f_out, outputs.detach().cpu()))
                 if epoch == EPOCH - 1:
                     FEATS.append(features[feature_name].cpu().numpy())
+                if args.gradient:
+                    grad_norm_ += torch.norm((Jac.get_jacobian([inputs, labels])), 'fro')**2
             F_out = torch.cat([F_out, torch.unsqueeze(f_out, 2)], dim=2)
             test_acc = correct / total
             test_acc_.append(test_acc)
+            if args.gradient:
+                grad_norm.append(grad_norm_.detach().cpu()*1e-4)
             # test_accs.append(test_acc)
             if call_wandb:
                 wandb.log({"test_accuracy": test_acc})
@@ -490,7 +504,7 @@ def model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
         # plt.savefig('resnet_18_v2')
         # plt.clf()
 
-    return model, best_acc, beta, phi, F_out, train_loss, train_acc, test_acc_
+    return model, best_acc, beta, phi, F_out, train_loss, train_acc, test_acc_, grad_norm
 
 def arg_parser():
     # parsers
@@ -511,6 +525,8 @@ def arg_parser():
     parser.add_argument('--init_scale', default=1, type=float, help='scale model initial parameter')
     parser.add_argument('--loss_fn', default='mse_loss', help='loss type')
     parser.add_argument('--optimizer', default='sgd', help='optimizer type')
+    parser.add_argument('--gradient', default=False, type=bool, help='document changes with gradient')
+
     args = parser.parse_args()
     return args
 
@@ -562,7 +578,7 @@ def main():
     # Start Training model, train_dl, vali_dl, EPOCH, criterion, optimizer, scheduler
 
     init_f_out = initial_test(model, val_loader, device)
-    model, best_acc, beta, Phi, F_out, train_loss, train_acc, test_acc_ = model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
+    model, best_acc, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm= model_train(model, device, train_loader, val_loader, EPOCH, criterion, args)
 
     F_out[:, :, 0] = init_f_out
     # save model
@@ -636,6 +652,30 @@ def main():
     plt.savefig(dir_name+'/'+args.model+'test_acc.pdf')
     plt.clf()
 
+    if args.gradient:
+        keys = F_out.keys()
+        fn_norm = []
+        for i in range(len(keys)):
+            fn_norm.append(1e-4*torch.trace(F_out[keys[i]].mm(F_out[keys[i]].t())))
+
+    plt.plot([torch.log(x) for x in fn_norm], [torch.log(x) for x in grad_norm], linewidth=2, label='grad_fn')
+    plt.locator_params(axis='x', nbins=8)
+    plt.legend(prop={'size': 10})
+    axes = plt.gca()
+    plt.xlabel("log(fn)", color='k')
+    plt.xlabel("log(grad_fn)", color='k')
+    plt.legend(loc='best', prop={'size': 18})
+    plt.title('grad_fn')
+    axes = plt.gca()
+    axes.xaxis.label.set_size(18)
+    axes.yaxis.label.set_size(18)
+    plt.xticks(color='k', fontsize=14)
+    plt.yticks(color='k', fontsize=14)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(dir_name+'/'+args.model+'grad_fn')
+    plt.savefig(dir_name+'/'+args.model+'grad_fn.pdf')
+    plt.clf()
 
     U, S, V = torch.svd(Phi)
     beta_star = torch.matmul(beta, V)
