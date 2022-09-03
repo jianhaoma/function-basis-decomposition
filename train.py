@@ -201,7 +201,7 @@ def load_architecture(arch_id: str, num_classes: int, pic_size: int) -> nn.Modul
                             bias=False)
         model.features[2] = nn.Identity()
         return model
-    elif arch_id == 'vision-transformer':
+    elif arch_id == 'vit':
         model = torchvision.models.vit_b_16(pretrained=False, num_classes=num_classes)
         model.conv_proj = nn.Conv2d(3,
                                 2*pic_size,
@@ -416,13 +416,9 @@ def model_train(args):
 
     # optimizer
     if args.optimizer == 'sgd':
-        optimizer = torch.optim.SGD(model.parameters(),
-                                lr=LR,
-                                momentum=0.9,
-                                weight_decay=1e-4)
-    elif args.optimizer == 'lars':
         optimizer = LARS(model.parameters(), lr=LR, momentum=0.9, weight_decay=1e-4)
-
+    elif args.optimizer == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR, betas=(0.9, 0.999), eps=1e-08, weight_decay=0)
     # learining rate; warm up; weight decay
     if args.lr_setting[1]>0:
         init_lr = args.lr_setting[2]
@@ -505,7 +501,7 @@ def model_train(args):
 
         model.eval()
         f_out = torch.empty((0, num_classes))
-        if args.gradient:
+        if args.gradient==True:
             correct, total = 0, 0
             num_batch = len(val_loader)
             lc = LayerCollection.from_model(model)
@@ -576,8 +572,11 @@ def arg_parser():
     parser.add_argument('--decay_stepsize', default=50, type=int, help='the decay time')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--num_run', default=0, type=int, help='the number of run')
-    parser.add_argument('--call_wandb', default=False, type=bool, help='connect with wandb or not')
-    parser.add_argument('--gradient', default=False, type=bool, help='document changes with gradient')
+    parser.add_argument('--call_wandb', default=False, action='store_true', help='connect with wandb or not')
+    parser.add_argument('--no-call_wandb', dest='call_wandb', action='store_false')
+    parser.add_argument('--gradient', default=False, action='store_true', help='document changes with gradient')
+    parser.add_argument('--no-gradient', dest='gradient', action='store_false')
+    parser.add_argument('--path', default='none', type=str, help='saving path')
     args = parser.parse_args()
     return args
 
@@ -608,8 +607,10 @@ def main():
     model_state, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm= model_train(args)
 
     # save model
-    dir_name = args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+args.lr_setting[0]+'wp_epoch'+args.lr_setting[1]+'-init_lr_wp'+args.lr_setting[2]+'-'+args.loss_fn+'-weight_dec'+args.decay_rate+'per'+args.decay_stepsize+'-opt'+args.optimizer+time
-
+    if args.path == 'none':
+        dir_name = args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+time
+    else:
+        dir_name = args.path
     os.makedirs(dir_name)
     torch.save(model_state, dir_name+'/'+args.model+'_state')
     torch.save(beta, dir_name+'/'+args.model+'beta')
