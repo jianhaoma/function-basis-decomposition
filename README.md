@@ -3,13 +3,6 @@
 Instruction for train.py:
   train.py will return basis coefficients, train loss and test/train accuracy for given model, datasets and model parameters.
   Simply type python train.py --param=given_param to run the file.
-  usage: train.py [-h] [--model MODEL] [--init_scale INIT_SCALE] [--data DATA]
-                    [--loss_fn LOSS_FN] [--optimizer OPTIMIZER]
-                    [--batch_size BATCH_SIZE] [--num_epoch NUM_EPOCH]
-                    [--lr_setting [LR_SETTING [LR_SETTING ...]]]
-                    [--decay_rate DECAY_RATE] [--decay_stepsize DECAY_STEPSIZE]
-                    [--seed SEED] [--num_run NUM_RUN] [--call_wandb]
-                    [--no-call_wandb] [--gradient] [--no-gradient] [--path PATH]
 
     PyTorch Incremental Learning Experiments
 
