@@ -8,7 +8,7 @@ Instruction for train.py:
 
     optional arguments:
       -h, --help            show this help message and exit
-      --model MODEL         type of model: support: fc-act(act=elu,relu,tanh,hardtanh,softmax), vgg11, resnet18, alexnet, wide-resnet, vit.
+      --model MODEL         type of model: support: fc-act(act=elu,relu,tanh,hardtanh,softmax), vgg11, resnet18, alexnet, wide-resnet, vit, swimnet.
       --init_scale INIT_SCALE
                             scale model initial parameter
       --data DATA           type of dataset: support: Cifar10, Cifar100, Imagenet
