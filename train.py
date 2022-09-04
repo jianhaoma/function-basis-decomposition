@@ -69,10 +69,10 @@ def get_pooling(pooling: str):
     elif pooling == 'average':
         return torch.nn.AvgPool2d((2, 2))
 
-def fully_connected_net(num_classes: int, pic_size: int, widths: List[int], activation: str, bias: bool = True) -> nn.Module:
+def fully_connected_net(num_chann: int, num_classes: int, pic_size: int, widths: List[int], activation: str, bias: bool = True) -> nn.Module:
     modules = [nn.Flatten()]
     for l in range(len(widths)):
-        prev_width = widths[l - 1] if l > 0 else 3*pic_size**2
+        prev_width = widths[l - 1] if l > 0 else num_chann*pic_size**2
         modules.extend([
             nn.Linear(prev_width, widths[l], bias=bias),
             get_activation(activation),
@@ -80,10 +80,10 @@ def fully_connected_net(num_classes: int, pic_size: int, widths: List[int], acti
     modules.append(nn.Linear(widths[-1], num_classes, bias=bias))
     return nn.Sequential(*modules)
 
-def fully_connected_net_bn(num_classes: int, pic_size: int, widths: List[int], activation: str, bias: bool = True) -> nn.Module:
+def fully_connected_net_bn(num_chann: int, num_classes: int, pic_size: int, widths: List[int], activation: str, bias: bool = True) -> nn.Module:
     modules = [nn.Flatten()]
     for l in range(len(widths)):
-        prev_width = widths[l - 1] if l > 0 else 3*pic_size**2
+        prev_width = widths[l - 1] if l > 0 else num_chann*pic_size**2
         modules.extend([
             nn.Linear(prev_width, widths[l], bias=bias),
             get_activation(activation),
@@ -92,11 +92,11 @@ def fully_connected_net_bn(num_classes: int, pic_size: int, widths: List[int], a
     modules.append(nn.Linear(widths[-1], num_classes, bias=bias))
     return nn.Sequential(*modules)
 
-def convnet(num_classes: int, pic_size: int, widths: List[int], activation: str, pooling: str, bias: bool) -> nn.Module:
+def convnet(num_chann: int, num_classes: int, pic_size: int, widths: List[int], activation: str, pooling: str, bias: bool) -> nn.Module:
     modules = []
     size = 32
     for l in range(len(widths)):
-        prev_width = widths[l - 1] if l > 0 else 3
+        prev_width = widths[l - 1] if l > 0 else num_chann
         modules.extend([
             nn.Conv2d(prev_width, widths[l], bias=bias, **_CONV_OPTIONS),
             get_activation(activation),
@@ -107,11 +107,11 @@ def convnet(num_classes: int, pic_size: int, widths: List[int], activation: str,
     modules.append(nn.Linear(widths[-1]*size*size, num_classes))
     return nn.Sequential(*modules)
 
-def convnet_bn(num_classes: int, pic_size: int, widths: List[int], activation: str, pooling: str, bias: bool) -> nn.Module:
+def convnet_bn(num_chann: int, num_classes: int, pic_size: int, widths: List[int], activation: str, pooling: str, bias: bool) -> nn.Module:
     modules = []
     size = 32
     for l in range(len(widths)):
-        prev_width = widths[l - 1] if l > 0 else 3
+        prev_width = widths[l - 1] if l > 0 else num_chann
         modules.extend([
             nn.Conv2d(prev_width, widths[l], bias=bias, **_CONV_OPTIONS),
             get_activation(activation),
@@ -124,55 +124,55 @@ def convnet_bn(num_classes: int, pic_size: int, widths: List[int], activation: s
     return nn.Sequential(*modules)
 
 
-def load_architecture(arch_id: str, num_classes: int, pic_size: int) -> nn.Module:
+def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: int) -> nn.Module:
     #  ======   fully-connected networks =======
     if arch_id == 'fc-relu':
-        return fully_connected_net(num_classes, pic_size, [200, 200], 'relu', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200, 200], 'relu', bias=True)
     elif arch_id == 'fc-elu':
-        return fully_connected_net(num_classes, pic_size, [200, 200], 'elu', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200, 200], 'elu', bias=True)
     elif arch_id == 'fc-tanh':
-        return fully_connected_net(num_classes, pic_size, [200, 200], 'tanh', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200, 200], 'tanh', bias=True)
     elif arch_id == 'fc-hardtanh':
-        return fully_connected_net(num_classes, pic_size, [200, 200], 'hardtanh', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200, 200], 'hardtanh', bias=True)
     elif arch_id == 'fc-softplus':
-        return fully_connected_net(num_classes, pic_size, [200, 200], 'softplus', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200, 200], 'softplus', bias=True)
 
     #  ======   convolutional networks =======
     elif arch_id == 'cnn-relu':
-        return convnet(num_classes, pic_size, [pic_size, pic_size], activation='relu', pooling='max', bias=True)
+        return convnet(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='relu', pooling='max', bias=True)
     elif arch_id == 'cnn-elu':
-        return convnet(num_classes, pic_size, [pic_size, pic_size], activation='elu', pooling='max', bias=True)
+        return convnet(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='elu', pooling='max', bias=True)
     elif arch_id == 'cnn-tanh':
-        return convnet(num_classes, pic_size, [pic_size, pic_size], activation='tanh', pooling='max', bias=True)
+        return convnet(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='tanh', pooling='max', bias=True)
     elif arch_id == 'cnn-avgpool-relu':
-        return convnet(num_classes, pic_size, [pic_size, pic_size], activation='relu', pooling='average', bias=True)
+        return convnet(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='relu', pooling='average', bias=True)
     elif arch_id == 'cnn-avgpool-elu':
-        return convnet(num_classes, pic_size, [pic_size, pic_size], activation='elu', pooling='average', bias=True)
+        return convnet(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='elu', pooling='average', bias=True)
     elif arch_id == 'cnn-avgpool-tanh':
-        return convnet(num_classes, pic_size, [pic_size, pic_size], activation='tanh', pooling='average', bias=True)
+        return convnet(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='tanh', pooling='average', bias=True)
 
     #  ======   convolutional networks with BN =======
     elif arch_id == 'cnn-bn-relu':
-        return convnet_bn(num_classes, pic_size, [pic_size, pic_size], activation='relu', pooling='max', bias=True)
+        return convnet_bn(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='relu', pooling='max', bias=True)
     elif arch_id == 'cnn-bn-elu':
-        return convnet_bn(num_classes, pic_size, [pic_size, pic_size], activation='elu', pooling='max', bias=True)
+        return convnet_bn(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='elu', pooling='max', bias=True)
     elif arch_id == 'cnn-bn-tanh':
-        return convnet_bn(num_classes, pic_size, [pic_size, pic_size], activation='tanh', pooling='max', bias=True)
+        return convnet_bn(num_chann, num_classes, pic_size, [pic_size, pic_size], activation='tanh', pooling='max', bias=True)
 
     # ======= vary depth =======
     elif arch_id == 'fc-tanh-depth1':
-        return fully_connected_net(num_classes, pic_size, [200], 'tanh', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200], 'tanh', bias=True)
     elif arch_id == 'fc-tanh-depth2':
-        return fully_connected_net(num_classes, pic_size, [200, 200], 'tanh', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200, 200], 'tanh', bias=True)
     elif arch_id == 'fc-tanh-depth3':
-        return fully_connected_net(num_classes, pic_size, [200, 200, 200], 'tanh', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200, 200, 200], 'tanh', bias=True)
     elif arch_id == 'fc-tanh-depth4':
-        return fully_connected_net(num_classes, pic_size, [200, 200, 200, 200], 'tanh', bias=True)
+        return fully_connected_net(num_chann, num_classes, pic_size, [200, 200, 200, 200], 'tanh', bias=True)
 
     # ======= applicable NNs ======= 
     elif arch_id == 'resnet18':
         model = torchvision.models.resnet18(pretrained=False, num_classes=num_classes)
-        model.conv1 = nn.Conv2d(3,
+        model.conv1 = nn.Conv2d(num_chann,
                             2*pic_size,
                             kernel_size=(3, 3),
                             stride=(1, 1),
@@ -182,7 +182,7 @@ def load_architecture(arch_id: str, num_classes: int, pic_size: int) -> nn.Modul
         return model
     elif arch_id == 'vgg11':
         model = torchvision.models.vgg11(pretrained=False, num_classes=num_classes)
-        model.features[0] = nn.Conv2d(3,
+        model.features[0] = nn.Conv2d(num_chann,
                                 2*pic_size,
                                 kernel_size=(3, 3),
                                 stride=(1, 1),
@@ -193,7 +193,7 @@ def load_architecture(arch_id: str, num_classes: int, pic_size: int) -> nn.Modul
         return model
     elif arch_id == 'alexnet':
         model = torchvision.models.alexnet(pretrained=False, num_classes=num_classes)
-        model.features[0] = nn.Conv2d(3,
+        model.features[0] = nn.Conv2d(num_chann,
                             2*pic_size,
                             kernel_size=(3, 3),
                             stride=(1, 1),
@@ -203,7 +203,7 @@ def load_architecture(arch_id: str, num_classes: int, pic_size: int) -> nn.Modul
         return model
     elif arch_id == 'vit':
         model = torchvision.models.vit_b_16(pretrained=False, num_classes=num_classes)
-        model.conv_proj = nn.Conv2d(3,
+        model.conv_proj = nn.Conv2d(num_chann,
                                 2*pic_size,
                                 kernel_size=(3, 3),
                                 stride=(1, 1),
@@ -213,7 +213,7 @@ def load_architecture(arch_id: str, num_classes: int, pic_size: int) -> nn.Modul
         return model
     elif arch_id == 'wide-resnet':
         model = torchvision.models.wide_resnet50_2(pretrained=False, num_classes=num_classes)
-        model.conv1 = nn.Conv2d(3,
+        model.conv1 = nn.Conv2d(num_chann,
                                 2*pic_size,
                                 kernel_size=(3, 3),
                                 stride=(1, 1),
@@ -223,7 +223,7 @@ def load_architecture(arch_id: str, num_classes: int, pic_size: int) -> nn.Modul
         return model
     elif arch_id == 'swimnet':
         model = torchvision.models.swin_t(weights=None, num_classes=num_classes)
-        model.features[0][0] = nn.Conv2d(3,
+        model.features[0][0] = nn.Conv2d(num_chann,
                                 2*pic_size,
                                 kernel_size=(3, 3),
                                 stride=(1, 1),
@@ -234,7 +234,13 @@ def load_architecture(arch_id: str, num_classes: int, pic_size: int) -> nn.Modul
 # load training data
 def load_train_data(batch_size, dataset, num_workers):
 
-    if dataset == 'Cifar10':
+    if dataset == 'Mnist':
+        train_set = torchvision.datasets.MNIST(root='./data',
+                                                train=True,
+                                                download=True,
+                                                transform=transforms.ToTensor())      
+    
+    elif dataset == 'Cifar10':
         param_mean = (0.4914, 0.4822, 0.4465)
         param_std = (0.2471, 0.2435, 0.2616
                  )
@@ -280,7 +286,8 @@ def load_train_data(batch_size, dataset, num_workers):
         train_set = torchvision.datasets.ImageNet(root='./data',
                                                 train=True,
                                                 download=True,
-                                                transform=transform_train)                                                                                         
+                                                transform=transform_train)
+                                                                                     
 
     train_loader = torch.utils.data.DataLoader(train_set,
                                                batch_size=batch_size,
@@ -292,10 +299,15 @@ def load_train_data(batch_size, dataset, num_workers):
 # load test data and validation data (here, test == validation)
 def load_test_data(batch_size, dataset, num_workers):
 
-    if dataset == 'Cifar10':
+    if dataset == 'Mnist':
+        test_set = torchvision.datasets.MNIST(root='./data',
+                                                train=False,
+                                                download=True,
+                                                transform=transforms.ToTensor()) 
+
+    elif dataset == 'Cifar10':
         param_mean = (0.4914, 0.4822, 0.4465)
-        param_std = (0.2471, 0.2435, 0.2616
-                 )
+        param_std = (0.2471, 0.2435, 0.2616)
         transform_test = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(param_mean, param_std),
@@ -377,12 +389,14 @@ def init_scale(model, scale):
     return model
 
 def info(data):
-    if data == 'Cifar10':
-        return 10, 32
+    if data == 'Mnist':
+        return 1, 10, 28
     elif data == 'Cifar100':
-        return 100, 32
+        return 3, 100, 32
     elif data == 'Imagenet':
-        return 1000, 256   
+        return 3, 1000, 256   
+    elif data == 'Cifar10':
+        return 3, 10, 32
 
 def model_train(args):
     # epoch; batch size
@@ -397,9 +411,9 @@ def model_train(args):
     else:
         val_loader = load_test_data(batch_size, args.data, num_workers=0)
     
-    num_classes, pic_size = info(args.data)
+    num_chann, num_classes, pic_size = info(args.data)
     model_name = args.model
-    model = load_architecture(model_name, num_classes, pic_size)
+    model = load_architecture(model_name, num_chann, num_classes, pic_size)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -598,18 +612,19 @@ def main():
     Ue = timezone('US/Eastern')
     Ue_time = datetime.now(Ue)
     time = Ue_time.strftime('%m-%d-%H-%M')
+
+    dir_name = args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+time
     if args.call_wandb:
-        wandb.init(project=args.model+args.data,
-           entity="incremental-learning-basis-decomposition")
+        wandb.init(project=args.model+args.data, name=dir_name,
+        entity="incremental-learning-basis-decomposition")
            # wandb: specify name of training and experiment details
            # log beta and other result on wandb
+        wandb.config.update(args)
     
     model_state, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm= model_train(args)
 
     # save model
-    if args.path == 'none':
-        dir_name = args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+time
-    else:
+    if args.path != 'none':
         dir_name = args.path
     os.makedirs(dir_name)
     torch.save(model_state, dir_name+'/'+args.model+'_state')
@@ -712,7 +727,10 @@ def main():
         u = u / norm_u
         coe = []
         for iter in range(Iter):
-            coe.append((torch.trace(F_out[:, :, iter].mm(u))) / 10000)
+            beta_i_it = (torch.trace(F_out[:, :, iter].mm(u))) / 10000
+            coe.append(beta_i_it)
+            if i<5:
+                wandb.log({'epoch':iter+1, 'beta_'+str(i+1): beta_i_it})
         Coe[i + 1] = coe
 
     for i in range(5):
@@ -732,6 +750,7 @@ def main():
     plt.yticks(color='k', fontsize=14)
     plt.grid(True)
     plt.tight_layout()
+    wandb.log({"beta_5": plt.gcf()})
     plt.savefig(dir_name+'/'+args.model+'beta-5')
     plt.savefig(dir_name+'/'+args.model+'beta-5.pdf')
     plt.clf()
@@ -755,6 +774,8 @@ def main():
     plt.xticks(color='k', fontsize=14)
     plt.yticks(color='k', fontsize=14)
     plt.grid(True)
+    plt.tight_layout()
+    wandb.log({"beta_20": plt.gcf()})
     plt.savefig(dir_name+'/'+args.model+'beta-20')
     plt.savefig(dir_name+'/'+args.model+'beta-20.pdf')
     return
