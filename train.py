@@ -615,10 +615,8 @@ def main():
 
     dir_name = args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+time
     if args.call_wandb:
-        wandb.init(project=args.model+args.data, name=dir_name,
-        entity="incremental-learning-basis-decomposition")
-           # wandb: specify name of training and experiment details
-           # log beta and other result on wandb
+        wandb.init(project=args.model+args.data, name=dir_name, 
+           entity="incremental-learning-basis-decomposition")
         wandb.config.update(args)
     
     model_state, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm= model_train(args)
