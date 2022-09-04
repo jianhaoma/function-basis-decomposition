@@ -36,9 +36,9 @@ Instruction for train.py:
                             the decay time
       --seed SEED           random seed
       --num_run NUM_RUN     the number of run
-      --call_wandb          connect with wandb or not
-      --no-call_wandb
-      --gradient            document changes with gradient
-                            note: if true, it may cosume large cuda memory.
-      --no-gradient
+      --call_wandb          connect with wandb 
+      --no-call_wandb       don't connect with wandb
+      --gradient            compute and document changes with gradient
+                            note: it may cosume large cuda memory.
+      --no-gradient         don't compute gradient
       --path PATH           saving path
