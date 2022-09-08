@@ -21,6 +21,13 @@ import flash
 import torch
 import torchvision
 import torchvision.transforms as transforms
+from torchvision.transforms import (CenterCrop, 
+                                    Compose, 
+                                    Normalize, 
+                                    RandomHorizontalFlip,
+                                    RandomResizedCrop, 
+                                    Resize, 
+                                    ToTensor)
 from torch.utils.data import random_split
 from torch.utils.data import DataLoader
 from torchvision.utils import make_grid
@@ -35,6 +42,8 @@ from typing import List
 from flash.core.optimizers import LARS
 import os
 import argparse
+from transformers import ViTFeatureExtractor
+from datasets import load_dataset
 from nngeometry.object.fspace import FMatDense
 from nngeometry.object.vector import FVector
 from nngeometry.object import PMatImplicit
@@ -180,6 +189,16 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
                             bias=False)
         model.maxpool = nn.Identity()
         return model
+    elif arch_id == 'resnet50':
+        model = torchvision.models.resnet50(pretrained=False, num_classes=num_classes)
+        model.conv1 = nn.Conv2d(num_chann,
+                            2*pic_size,
+                            kernel_size=(3, 3),
+                            stride=(1, 1),
+                            padding=(1, 1),
+                            bias=False)
+        model.maxpool = nn.Identity()
+        return model
     elif arch_id == 'vgg11':
         model = torchvision.models.vgg11(pretrained=False, num_classes=num_classes)
         model.features[0] = nn.Conv2d(num_chann,
@@ -203,12 +222,12 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
         return model
     elif arch_id == 'vit':
         model = torchvision.models.vit_b_16(pretrained=False, num_classes=num_classes)
-        model.conv_proj = nn.Conv2d(num_chann,
-                                2*pic_size,
-                                kernel_size=(3, 3),
-                                stride=(1, 1),
-                                padding=(1, 1),
-                                bias=False)
+        # model.conv_proj = nn.Conv2d(num_chann,
+        #                         2*pic_size,
+        #                         kernel_size=(3, 3),
+        #                         stride=(1, 1),
+        #                         padding=(1, 1),
+        #                         bias=False)
         #model.maxpool = nn.Identity()
         return model
     elif arch_id == 'wide-resnet':
@@ -221,7 +240,7 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
                                 bias=False)
         model.maxpool = nn.Identity()
         return model
-    elif arch_id == 'swimnet':
+    elif arch_id == 'swim-net':
         model = torchvision.models.swin_t(weights=None, num_classes=num_classes)
         model.features[0][0] = nn.Conv2d(num_chann,
                                 2*pic_size,
@@ -232,7 +251,7 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
         return model
 
 # load training data
-def load_train_data(batch_size, dataset, num_workers):
+def load_train_data(batch_size, dataset, model, num_workers):
 
     if dataset == 'Mnist':
         train_set = torchvision.datasets.MNIST(root='./data',
@@ -240,10 +259,9 @@ def load_train_data(batch_size, dataset, num_workers):
                                                 download=True,
                                                 transform=transforms.ToTensor())      
     
-    elif dataset == 'Cifar10':
+    elif dataset == 'Cifar10' and model != 'vit':
         param_mean = (0.4914, 0.4822, 0.4465)
-        param_std = (0.2471, 0.2435, 0.2616
-                 )
+        param_std = (0.2471, 0.2435, 0.2616)
         transform_train = transforms.Compose([
             torchvision.transforms.RandomCrop(32, padding=4),
             torchvision.transforms.RandomHorizontalFlip(),
@@ -255,7 +273,12 @@ def load_train_data(batch_size, dataset, num_workers):
                                                 train=True,
                                                 download=True,
                                                 transform=transform_train)
-
+    elif dataset == 'Cifar10' and model == 'vit':     
+        
+        train_set = load_dataset('cifar10')['train']
+        feature_extractor = ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
+        train_set.set_transform(train_transforms)
+        
     elif dataset == 'Cifar100':
         param_mean = (0.5071, 0.4867, 0.4408)
         param_std = (0.2675, 0.2565, 0.2761)
@@ -287,17 +310,62 @@ def load_train_data(batch_size, dataset, num_workers):
                                                 train=True,
                                                 download=True,
                                                 transform=transform_train)
-                                                                                     
-
-    train_loader = torch.utils.data.DataLoader(train_set,
+    if model == 'vit':
+        train_loader = torch.utils.data.DataLoader(train_set, 
+                                                collate_fn=collate_fn, 
+                                                batch_size=batch_size,
+                                                shuffle=False,
+                                                num_workers=num_workers)                     
+    else:                                                                  
+        train_loader = torch.utils.data.DataLoader(train_set,
                                                batch_size=batch_size,
                                                shuffle=True,
                                                num_workers=num_workers)
 
     return train_loader
 
+def train_transforms(examples):
+    mean = (0.5, 0.5, 0.5)
+    std = (0.5, 0.5, 0.5)
+    size = 224
+    normalize = Normalize(mean=mean, std=std)
+    _train_transforms = Compose(
+            [
+                RandomResizedCrop(size),
+                RandomHorizontalFlip(),
+                ToTensor(),
+                normalize,
+            ]
+        )
+    examples['pixel_values'] = [_train_transforms(image.convert("RGB")) for image in examples['img']]
+    return examples
+
+def val_transforms(examples):
+    mean = (0.5, 0.5, 0.5)
+    std = (0.5, 0.5, 0.5)
+    size = 224
+    normalize = Normalize(mean=mean, std=std)
+    _val_transforms = Compose(
+        [
+            Resize(size),
+            CenterCrop(size),
+            ToTensor(),
+            normalize,
+        ]
+        )
+
+    examples['pixel_values'] = [_val_transforms(image.convert("RGB")) for image in examples['img']]
+    return examples
+
+def collate_fn(examples):
+    
+    pixel_values = torch.stack([example["pixel_values"] for example in examples])
+    labels = torch.tensor([example["label"] for example in examples])
+    return [pixel_values, labels]
+
+
 # load test data and validation data (here, test == validation)
-def load_test_data(batch_size, dataset, num_workers):
+def load_test_data(batch_size, dataset, model, num_workers):
 
     if dataset == 'Mnist':
         test_set = torchvision.datasets.MNIST(root='./data',
@@ -305,7 +373,7 @@ def load_test_data(batch_size, dataset, num_workers):
                                                 download=True,
                                                 transform=transforms.ToTensor()) 
 
-    elif dataset == 'Cifar10':
+    elif dataset == 'Cifar10' and model != 'vit':
         param_mean = (0.4914, 0.4822, 0.4465)
         param_std = (0.2471, 0.2435, 0.2616)
         transform_test = transforms.Compose([
@@ -317,6 +385,12 @@ def load_test_data(batch_size, dataset, num_workers):
                                                 train=False,
                                                 download=True,
                                                 transform=transform_test)
+    elif dataset == 'Cifar10' and model == 'vit':     
+        
+        test_set = load_dataset('cifar10')['test']
+        feature_extractor = ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
+        test_set.set_transform(val_transforms)
+
     elif dataset == 'Cifar100':
         param_mean = (0.5071, 0.4867, 0.4408)
         param_std = (0.2675, 0.2565, 0.2761)
@@ -343,14 +417,21 @@ def load_test_data(batch_size, dataset, num_workers):
         ])
 
         train_set = torchvision.datasets.ImageNet(root='./data',
-                                                train=True,
+                                                train=False,
                                                 download=True,
                                                 transform=transform_train)  
-                                                
-    test_loader = torch.utils.data.DataLoader(test_set,
+    if model == 'vit':
+        test_loader = torch.utils.data.DataLoader(test_set, 
+                                                collate_fn=collate_fn, 
                                                 batch_size=batch_size,
                                                 shuffle=False,
-                                                num_workers=num_workers)                                              
+                                                num_workers=num_workers)                     
+    else:                                                                  
+        test_loader = torch.utils.data.DataLoader(test_set,
+                                                batch_size=batch_size,
+                                                shuffle=False,
+                                                num_workers=num_workers)   
+
 
     return test_loader
 
@@ -404,12 +485,12 @@ def model_train(args):
     batch_size = args.batch_size
     
     # load data and model to device
-    train_loader = load_train_data(batch_size, args.data,
-                                   num_workers=0)
+    train_loader = load_train_data(batch_size, args.data, 
+                                   args.model, num_workers=0)
     if args.gradient:
-        val_loader = load_test_data(24, args.data, num_workers=0)
+        val_loader = load_test_data(24, args.data, args.model, num_workers=0)
     else:
-        val_loader = load_test_data(batch_size, args.data, num_workers=0)
+        val_loader = load_test_data(batch_size, args.data, args.model, num_workers=0)
     
     num_chann, num_classes, pic_size = info(args.data)
     model_name = args.model
@@ -430,6 +511,9 @@ def model_train(args):
 
     # optimizer
     if args.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.init_lr, momentum=0.9,
+                                weight_decay=1e-4)
+    elif args.optimizer == 'lars':
         optimizer = LARS(model.parameters(), lr=LR, momentum=0.9, weight_decay=1e-4)
     elif args.optimizer == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=LR, betas=(0.9, 0.999), eps=1e-08, weight_decay=0)
@@ -615,21 +699,21 @@ def main():
 
     dir_name = args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+time
     if args.call_wandb:
-        wandb.init(project=args.model+args.data, name=dir_name, 
-           entity="incremental-learning-basis-decomposition")
+        wandb.init(project=args.model+args.data, name=dir_name, entity="incremental-learning-basis-decomposition")
         wandb.config.update(args)
     
-    model_state, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm= model_train(args)
+    _, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm= model_train(args)
 
     # save model
     if args.path != 'none':
         dir_name = args.path
     os.makedirs(dir_name)
-    torch.save(model_state, dir_name+'/'+args.model+'_state')
-    torch.save(beta, dir_name+'/'+args.model+'beta')
-    torch.save(Phi, dir_name+'/'+args.model+'Phi')
-    torch.save(F_out, dir_name+'/'+args.model+'F_out')
-    torch.save(train_loss, dir_name+'/'+args.model+'train_loss')
+    # torch.save(model_state, dir_name+'/'+args.model+'_state')
+    #torch.save(beta, dir_name+'/'+args.model+'beta')
+    # torch.save(Phi, dir_name+'/'+args.model+'Phi')
+    # torch.save(F_out, dir_name+'/'+args.model+'F_out')
+    #torch.save(train_loss, dir_name+'/'+args.model+'train_loss')
+
 
     # plotting style
     plt.style.use('seaborn-paper')
@@ -711,6 +795,8 @@ def main():
         plt.yticks(color='k', fontsize=14)
         plt.grid(True)
         plt.tight_layout()
+        if args.call_wandb:
+            wandb.log({"grad_fn": plt.gcf()})
         plt.savefig(dir_name+'/'+args.model+'grad_fn')
         plt.savefig(dir_name+'/'+args.model+'grad_fn.pdf')
         plt.clf()
@@ -718,6 +804,7 @@ def main():
     U, _, V = torch.svd(Phi)
     beta_star = torch.matmul(beta, V)
     Coe = {}
+    data_coe = {}
     _, _, Iter = F_out.shape
     for i in range(20):
         u = torch.outer(beta_star[:, i], U[:, i])
@@ -727,7 +814,7 @@ def main():
         for iter in range(Iter):
             beta_i_it = (torch.trace(F_out[:, :, iter].mm(u))) / 10000
             coe.append(beta_i_it)
-            if i<5:
+            if i<5 and args.call_wandb:
                 wandb.log({'epoch':iter+1, 'beta_'+str(i+1): beta_i_it})
         Coe[i + 1] = coe
 
@@ -748,7 +835,6 @@ def main():
     plt.yticks(color='k', fontsize=14)
     plt.grid(True)
     plt.tight_layout()
-    wandb.log({"beta_5": plt.gcf()})
     plt.savefig(dir_name+'/'+args.model+'beta-5')
     plt.savefig(dir_name+'/'+args.model+'beta-5.pdf')
     plt.clf()
@@ -773,9 +859,12 @@ def main():
     plt.yticks(color='k', fontsize=14)
     plt.grid(True)
     plt.tight_layout()
-    wandb.log({"beta_20": plt.gcf()})
     plt.savefig(dir_name+'/'+args.model+'beta-20')
     plt.savefig(dir_name+'/'+args.model+'beta-20.pdf')
+
+    data_dict = {'test_acc':test_acc_, 'train_acc': train_acc, 'train_loss':train_loss, 'grad_norm': grad_norm}
+    np.save(dir_name+'/data_dict.npy', data_dict)
+    np.save(dir_name+'/coe.npy', Coe)    
     return
 
 if __name__ == "__main__":  
