@@ -3,13 +3,6 @@ import flash
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from torchvision.transforms import (CenterCrop, 
-                                    Compose, 
-                                    Normalize, 
-                                    RandomHorizontalFlip,
-                                    RandomResizedCrop, 
-                                    Resize, 
-                                    ToTensor)
 from torch.utils.data import random_split
 from torch.utils.data import DataLoader
 from torchvision.utils import make_grid
@@ -22,10 +15,9 @@ import copy
 from IPython.display import clear_output
 from typing import List
 from flash.core.optimizers import LARS
+from flash.core.optimizers import LAMB
 import os
 import argparse
-from transformers import ViTFeatureExtractor
-from datasets import load_dataset
 from nngeometry.object.fspace import FMatDense
 from nngeometry.object.vector import FVector
 from nngeometry.object import PMatImplicit
@@ -59,6 +51,8 @@ def get_pooling(pooling: str):
         return torch.nn.MaxPool2d((2, 2))
     elif pooling == 'average':
         return torch.nn.AvgPool2d((2, 2))
+    elif pooling == 'id':
+        return torch.nn.Identity()
 
 def fully_connected_net(num_chann: int, num_classes: int, pic_size: int, widths: List[int], activation: str, bias: bool = True) -> nn.Module:
     modules = [nn.Flatten()]
@@ -68,7 +62,7 @@ def fully_connected_net(num_chann: int, num_classes: int, pic_size: int, widths:
             nn.Linear(prev_width, widths[l], bias=bias),
             get_activation(activation),
         ])
-    modules.append(nn.Linear(widths[-1], num_classes, bias=bias))
+    modules.append(nn.Linear(widths[-1], num_classes, bias=False))
     return nn.Sequential(*modules)
 
 def fully_connected_net_bn(num_chann: int, num_classes: int, pic_size: int, widths: List[int], activation: str, bias: bool = True) -> nn.Module:
@@ -80,38 +74,52 @@ def fully_connected_net_bn(num_chann: int, num_classes: int, pic_size: int, widt
             get_activation(activation),
             nn.BatchNorm1d(widths[l])
         ])
-    modules.append(nn.Linear(widths[-1], num_classes, bias=bias))
+    modules.append(nn.Linear(widths[-1], num_classes, bias=False))
     return nn.Sequential(*modules)
 
 def convnet(num_chann: int, num_classes: int, pic_size: int, widths: List[int], activation: str, pooling: str, bias: bool) -> nn.Module:
     modules = []
-    size = 32
+    size = pic_size
     for l in range(len(widths)):
         prev_width = widths[l - 1] if l > 0 else num_chann
-        modules.extend([
-            nn.Conv2d(prev_width, widths[l], bias=bias, **_CONV_OPTIONS),
-            get_activation(activation),
-            get_pooling(pooling),
-        ])
-        size //= 2
+        if l ==0 :
+            modules.extend([
+                nn.Conv2d(prev_width, widths[l], bias=bias, **_CONV_OPTIONS),
+                get_activation(activation),
+                get_pooling('id'),
+            ])
+        else:
+            modules.extend([
+                nn.Conv2d(prev_width, widths[l], bias=bias, **_CONV_OPTIONS),
+                get_activation(activation),
+                get_pooling(pooling),
+            ])
+    size //= 2
     modules.append(nn.Flatten())
-    modules.append(nn.Linear(widths[-1]*size*size, num_classes))
+    modules.append(nn.Linear(widths[-1]*size**2, num_classes, bias=False))
     return nn.Sequential(*modules)
 
 def convnet_bn(num_chann: int, num_classes: int, pic_size: int, widths: List[int], activation: str, pooling: str, bias: bool) -> nn.Module:
     modules = []
-    size = 32
+    size = pic_size
     for l in range(len(widths)):
         prev_width = widths[l - 1] if l > 0 else num_chann
-        modules.extend([
+        if l == 0 :
+            modules.extend([
+                nn.Conv2d(prev_width, widths[l], bias=bias, **_CONV_OPTIONS),
+                get_activation(activation),
+                get_pooling('id'),
+            ])
+        else:
+            modules.extend([
             nn.Conv2d(prev_width, widths[l], bias=bias, **_CONV_OPTIONS),
             get_activation(activation),
             nn.BatchNorm2d(widths[l]),
             get_pooling(pooling),
         ])
-        size //= 2
+    size //= 2
     modules.append(nn.Flatten())
-    modules.append(nn.Linear(widths[-1]*size*size, num_classes))
+    modules.append(nn.Linear(widths[-1]*size*size, num_classes, bias=False))
     return nn.Sequential(*modules)
 
 
@@ -162,7 +170,8 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
 
     # ======= applicable NNs ======= 
     elif arch_id == 'resnet18':
-        model = torchvision.models.resnet18(pretrained=False, num_classes=num_classes)
+        model = torchvision.models.resnet18(weights=None, 
+        num_classes=num_classes)
         model.conv1 = nn.Conv2d(num_chann,
                             2*pic_size,
                             kernel_size=(3, 3),
@@ -170,9 +179,10 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
                             padding=(1, 1),
                             bias=False)
         model.maxpool = nn.Identity()
+        model.fc = nn.Linear(in_features=512, out_features=num_classes, bias=False)
         return model
     elif arch_id == 'resnet50':
-        model = torchvision.models.resnet50(pretrained=False, num_classes=num_classes)
+        model = torchvision.models.resnet50(weights=None, num_classes=num_classes)
         model.conv1 = nn.Conv2d(num_chann,
                             2*pic_size,
                             kernel_size=(3, 3),
@@ -180,9 +190,10 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
                             padding=(1, 1),
                             bias=False)
         model.maxpool = nn.Identity()
+        model.fc = nn.Linear(in_features=2048, out_features=num_classes, bias=False)
         return model
     elif arch_id == 'vgg11':
-        model = torchvision.models.vgg11(pretrained=False, num_classes=num_classes)
+        model = torchvision.models.vgg11(weights=None, num_classes=num_classes)
         model.features[0] = nn.Conv2d(num_chann,
                                 2*pic_size,
                                 kernel_size=(3, 3),
@@ -190,10 +201,11 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
                                 padding=(1, 1),
                                 bias=False)
         model.features[2] = nn.Identity()
+        model.classifier[6] = nn.Linear(in_features=4096, out_features=num_classes, bias=False)
         # initial value
         return model
     elif arch_id == 'alexnet':
-        model = torchvision.models.alexnet(pretrained=False, num_classes=num_classes)
+        model = torchvision.models.alexnet(weights=None, num_classes=num_classes)
         model.features[0] = nn.Conv2d(num_chann,
                             2*pic_size,
                             kernel_size=(3, 3),
@@ -201,19 +213,206 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
                             padding=(1, 1),
                             bias=False)
         model.features[2] = nn.Identity()
+        model.classifier[6] = nn.Linear(in_features=4096, out_features=num_classes, bias=False)
         return model
     elif arch_id == 'vit':
-        model = torchvision.models.vit_b_16(pretrained=False, num_classes=num_classes)
-        # model.conv_proj = nn.Conv2d(num_chann,
-        #                         2*pic_size,
-        #                         kernel_size=(3, 3),
-        #                         stride=(1, 1),
-        #                         padding=(1, 1),
-        #                         bias=False)
-        #model.maxpool = nn.Identity()
+        class Residual(nn.Module):
+            def __init__(self, *layers):
+                super().__init__()
+                self.residual = nn.Sequential(*layers)
+                self.gamma = nn.Parameter(torch.zeros(1))
+            
+            def forward(self, x):
+                return x + self.gamma * self.residual(x)
+
+        class LayerNormChannels(nn.Module):
+            def __init__(self, channels):
+                super().__init__()
+                self.norm = nn.LayerNorm(channels)
+            
+            def forward(self, x):
+                x = x.transpose(1, -1)
+                x = self.norm(x)
+                x = x.transpose(-1, 1)
+                return x
+
+        class SelfAttention2d(nn.Module):
+            def __init__(self, in_channels, out_channels, head_channels, shape):
+                super().__init__()
+                self.heads = out_channels // head_channels
+                self.head_channels = head_channels
+                self.scale = head_channels**-0.5
+                
+                self.to_keys = nn.Conv2d(in_channels, out_channels, 1)
+                self.to_queries = nn.Conv2d(in_channels, out_channels, 1)
+                self.to_values = nn.Conv2d(in_channels, out_channels, 1)
+                self.unifyheads = nn.Conv2d(out_channels, out_channels, 1)
+                
+                height, width = shape
+                self.pos_enc = nn.Parameter(torch.Tensor(self.heads, (2 * height - 1) * (2 * width - 1)))
+                self.register_buffer("relative_indices", self.get_indices(height, width))
+            
+            def forward(self, x):
+                b, _, h, w = x.shape
+                
+                keys = self.to_keys(x).view(b, self.heads, self.head_channels, -1)
+                values = self.to_values(x).view(b, self.heads, self.head_channels, -1)
+                queries = self.to_queries(x).view(b, self.heads, self.head_channels, -1)
+                
+                att = keys.transpose(-2, -1) @ queries
+                
+                indices = self.relative_indices.expand(self.heads, -1)
+                rel_pos_enc = self.pos_enc.gather(-1, indices)
+                rel_pos_enc = rel_pos_enc.unflatten(-1, (h * w, h * w))
+                
+                att = att * self.scale + rel_pos_enc
+                att = F.softmax(att, dim=-2)
+                
+                out = values @ att
+                out = out.view(b, -1, h, w)
+                out = self.unifyheads(out)
+                return out
+            
+            @staticmethod
+            def get_indices(h, w):
+                y = torch.arange(h, dtype=torch.long)
+                x = torch.arange(w, dtype=torch.long)
+                
+                y1, x1, y2, x2 = torch.meshgrid(y, x, y, x, indexing='ij')
+                indices = (y1 - y2 + h - 1) * (2 * w - 1) + x1 - x2 + w - 1
+                indices = indices.flatten()
+                
+                return indices
+
+        class FeedForward(nn.Sequential):
+            def __init__(self, in_channels, out_channels, mult=4):
+                hidden_channels = in_channels * mult
+                super().__init__(
+                    nn.Conv2d(in_channels, hidden_channels, 1),
+                    nn.GELU(),
+                    nn.Conv2d(hidden_channels, out_channels, 1)   
+                )
+
+        class TransformerBlock(nn.Sequential):
+            def __init__(self, channels, head_channels, shape, p_drop=0.):
+                super().__init__(
+                    Residual(
+                        LayerNormChannels(channels),
+                        SelfAttention2d(channels, channels, head_channels, shape),
+                        nn.Dropout(p_drop)
+                    ),
+                    Residual(
+                        LayerNormChannels(channels),
+                        FeedForward(channels, channels),
+                        nn.Dropout(p_drop)
+                    )
+                )
+
+        class TransformerStack(nn.Sequential):
+            def __init__(self, num_blocks, channels, head_channels, shape, p_drop=0.):
+                layers = [TransformerBlock(channels, head_channels, shape, p_drop) for _ in range(num_blocks)]
+                super().__init__(*layers)
+
+        """Embedding of patches"""
+
+        class ToPatches(nn.Sequential):
+            def __init__(self, in_channels, channels, patch_size, hidden_channels=32):
+                super().__init__(
+                    nn.Conv2d(in_channels, hidden_channels, 3, padding=1),
+                    nn.GELU(),
+                    nn.Conv2d(hidden_channels, channels, patch_size, stride=patch_size)
+                )
+
+        class AddPositionEmbedding(nn.Module):
+            def __init__(self, channels, shape):
+                super().__init__()
+                self.pos_embedding = nn.Parameter(torch.Tensor(channels, *shape))
+            
+            def forward(self, x):
+                return x + self.pos_embedding
+
+        class ToEmbedding(nn.Sequential):
+            def __init__(self, in_channels, channels, patch_size, shape, p_drop=0.):
+                super().__init__(
+                    ToPatches(in_channels, channels, patch_size),
+                    AddPositionEmbedding(channels, shape),
+                    nn.Dropout(p_drop)
+                )
+
+        """Main model"""
+
+        class Head(nn.Sequential):
+            def __init__(self, in_channels, classes, p_drop=0.):
+                super().__init__(
+                    LayerNormChannels(in_channels),
+                    nn.GELU(),
+                    nn.AdaptiveAvgPool2d(1),
+                    nn.Flatten(),
+                    nn.Dropout(p_drop),
+                    nn.Linear(in_channels, classes)
+                )
+
+        class RelViT(nn.Sequential):
+            def __init__(self, classes, image_size, channels, head_channels, num_blocks, patch_size,
+                        in_channels=3, emb_p_drop=0., trans_p_drop=0., head_p_drop=0.):
+                reduced_size = image_size // patch_size
+                shape = (reduced_size, reduced_size)
+                super().__init__(
+                    ToEmbedding(in_channels, channels, patch_size, shape, emb_p_drop),
+                    TransformerStack(num_blocks, channels, head_channels, shape, trans_p_drop),
+                    Head(channels, classes, head_p_drop)
+                )
+                self.reset_parameters()
+            
+            def reset_parameters(self):
+                for m in self.modules():
+                    if isinstance(m, (nn.Conv2d, nn.Linear)):
+                        nn.init.kaiming_normal_(m.weight)
+                        if m.bias is not None: nn.init.zeros_(m.bias)
+                    elif isinstance(m, nn.LayerNorm):
+                        nn.init.constant_(m.weight, 1.)
+                        nn.init.zeros_(m.bias)
+                    elif isinstance(m, AddPositionEmbedding):
+                        nn.init.normal_(m.pos_embedding, mean=0.0, std=0.02)
+                    elif isinstance(m, SelfAttention2d):
+                        nn.init.normal_(m.pos_enc, mean=0.0, std=0.02)
+                    elif isinstance(m, Residual):
+                        nn.init.zeros_(m.gamma)
+            
+            def separate_parameters(self):
+                parameters_decay = set()
+                parameters_no_decay = set()
+                modules_weight_decay = (nn.Linear, nn.Conv2d)
+                modules_no_weight_decay = (nn.LayerNorm,)
+
+                for m_name, m in self.named_modules():
+                    for param_name, param in m.named_parameters():
+                        full_param_name = f"{m_name}.{param_name}" if m_name else param_name
+
+                        if isinstance(m, modules_no_weight_decay):
+                            parameters_no_decay.add(full_param_name)
+                        elif param_name.endswith("bias"):
+                            parameters_no_decay.add(full_param_name)
+                        elif isinstance(m, Residual) and param_name.endswith("gamma"):
+                            parameters_no_decay.add(full_param_name)
+                        elif isinstance(m, AddPositionEmbedding) and param_name.endswith("pos_embedding"):
+                            parameters_no_decay.add(full_param_name)
+                        elif isinstance(m, SelfAttention2d) and param_name.endswith("pos_enc"):
+                            parameters_no_decay.add(full_param_name)
+                        elif isinstance(m, modules_weight_decay):
+                            parameters_decay.add(full_param_name)
+
+                # sanity check
+                assert len(parameters_decay & parameters_no_decay) == 0
+                assert len(parameters_decay) + len(parameters_no_decay) == len(list(model.parameters()))
+
+                return parameters_decay, parameters_no_decay
+
+        model = RelViT(num_classes, 32, channels=256, head_channels=32, num_blocks=8, patch_size=2,emb_p_drop=0., trans_p_drop=0., head_p_drop=0.3)
+        model[2][5] = torch.nn.Linear(in_features=256, out_features=num_classes, bias=False)
         return model
     elif arch_id == 'wide-resnet':
-        model = torchvision.models.wide_resnet50_2(pretrained=False, num_classes=num_classes)
+        model = torchvision.models.wide_resnet50_2(weights=None, num_classes=num_classes)
         model.conv1 = nn.Conv2d(num_chann,
                                 2*pic_size,
                                 kernel_size=(3, 3),
@@ -221,6 +420,7 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
                                 padding=(1, 1),
                                 bias=False)
         model.maxpool = nn.Identity()
+        model.fc = torch.nn.Linear(in_features=2048, out_features=num_classes, bias=False)
         return model
     elif arch_id == 'swim-net':
         model = torchvision.models.swin_t(weights=None, num_classes=num_classes)
@@ -230,10 +430,13 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
                                 stride=(1, 1),
                                 padding=(1, 1),
                                 bias=False)
+        model.head = torch.nn.Linear(in_features=768, out_features=num_classes, bias=False)
         return model
+    else:
+        raise NotImplementedError('unknown model: '+arch_id)
 
 # load training data
-def load_train_data(batch_size, dataset, model, num_workers):
+def load_train_data(batch_size, dataset, num_workers):
 
     if dataset == 'Mnist':
         train_set = torchvision.datasets.MNIST(root='./data',
@@ -241,9 +444,10 @@ def load_train_data(batch_size, dataset, model, num_workers):
                                                 download=True,
                                                 transform=transforms.ToTensor())      
     
-    elif dataset == 'Cifar10' and model != 'vit':
+    elif dataset == 'Cifar10':
         param_mean = (0.4914, 0.4822, 0.4465)
-        param_std = (0.2471, 0.2435, 0.2616)
+        param_std = (0.2471, 0.2435, 0.2616
+                 )
         transform_train = transforms.Compose([
             torchvision.transforms.RandomCrop(32, padding=4),
             torchvision.transforms.RandomHorizontalFlip(),
@@ -255,12 +459,7 @@ def load_train_data(batch_size, dataset, model, num_workers):
                                                 train=True,
                                                 download=True,
                                                 transform=transform_train)
-    elif dataset == 'Cifar10' and model == 'vit':     
-        
-        train_set = load_dataset('cifar10')['train']
-        feature_extractor = ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
-        train_set.set_transform(train_transforms)
-        
+
     elif dataset == 'Cifar100':
         param_mean = (0.5071, 0.4867, 0.4408)
         param_std = (0.2675, 0.2565, 0.2761)
@@ -292,62 +491,18 @@ def load_train_data(batch_size, dataset, model, num_workers):
                                                 train=True,
                                                 download=True,
                                                 transform=transform_train)
-    if model == 'vit':
-        train_loader = torch.utils.data.DataLoader(train_set, 
-                                                collate_fn=collate_fn, 
-                                                batch_size=batch_size,
-                                                shuffle=False,
-                                                num_workers=num_workers)                     
-    else:                                                                  
-        train_loader = torch.utils.data.DataLoader(train_set,
+    else:
+        raise NotImplementedError('unknown dataset: '+dataset)                                                                                
+
+    train_loader = torch.utils.data.DataLoader(train_set,
                                                batch_size=batch_size,
                                                shuffle=True,
                                                num_workers=num_workers)
 
     return train_loader
 
-def train_transforms(examples):
-    mean = (0.5, 0.5, 0.5)
-    std = (0.5, 0.5, 0.5)
-    size = 224
-    normalize = Normalize(mean=mean, std=std)
-    _train_transforms = Compose(
-            [
-                RandomResizedCrop(size),
-                RandomHorizontalFlip(),
-                ToTensor(),
-                normalize,
-            ]
-        )
-    examples['pixel_values'] = [_train_transforms(image.convert("RGB")) for image in examples['img']]
-    return examples
-
-def val_transforms(examples):
-    mean = (0.5, 0.5, 0.5)
-    std = (0.5, 0.5, 0.5)
-    size = 224
-    normalize = Normalize(mean=mean, std=std)
-    _val_transforms = Compose(
-        [
-            Resize(size),
-            CenterCrop(size),
-            ToTensor(),
-            normalize,
-        ]
-        )
-
-    examples['pixel_values'] = [_val_transforms(image.convert("RGB")) for image in examples['img']]
-    return examples
-
-def collate_fn(examples):
-    
-    pixel_values = torch.stack([example["pixel_values"] for example in examples])
-    labels = torch.tensor([example["label"] for example in examples])
-    return [pixel_values, labels]
-
-
 # load test data and validation data (here, test == validation)
-def load_test_data(batch_size, dataset, model, num_workers):
+def load_test_data(batch_size, dataset, num_workers):
 
     if dataset == 'Mnist':
         test_set = torchvision.datasets.MNIST(root='./data',
@@ -355,7 +510,7 @@ def load_test_data(batch_size, dataset, model, num_workers):
                                                 download=True,
                                                 transform=transforms.ToTensor()) 
 
-    elif dataset == 'Cifar10' and model != 'vit':
+    elif dataset == 'Cifar10':
         param_mean = (0.4914, 0.4822, 0.4465)
         param_std = (0.2471, 0.2435, 0.2616)
         transform_test = transforms.Compose([
@@ -367,12 +522,6 @@ def load_test_data(batch_size, dataset, model, num_workers):
                                                 train=False,
                                                 download=True,
                                                 transform=transform_test)
-    elif dataset == 'Cifar10' and model == 'vit':     
-        
-        test_set = load_dataset('cifar10')['test']
-        feature_extractor = ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
-        test_set.set_transform(val_transforms)
-
     elif dataset == 'Cifar100':
         param_mean = (0.5071, 0.4867, 0.4408)
         param_std = (0.2675, 0.2565, 0.2761)
@@ -399,21 +548,15 @@ def load_test_data(batch_size, dataset, model, num_workers):
         ])
 
         train_set = torchvision.datasets.ImageNet(root='./data',
-                                                train=False,
+                                                train=True,
                                                 download=True,
                                                 transform=transform_train)  
-    if model == 'vit':
-        test_loader = torch.utils.data.DataLoader(test_set, 
-                                                collate_fn=collate_fn, 
+    else:
+        raise NotImplementedError('unknown dataset: '+dataset)                                            
+    test_loader = torch.utils.data.DataLoader(test_set,
                                                 batch_size=batch_size,
                                                 shuffle=False,
-                                                num_workers=num_workers)                     
-    else:                                                                  
-        test_loader = torch.utils.data.DataLoader(test_set,
-                                                batch_size=batch_size,
-                                                shuffle=False,
-                                                num_workers=num_workers)   
-
+                                                num_workers=num_workers)                                              
 
     return test_loader
 
@@ -460,6 +603,8 @@ def info(data):
         return 3, 1000, 256   
     elif data == 'Cifar10':
         return 3, 10, 32
+    else:
+        raise NotImplementedError('unknown dataset: '+data)
 
 def model_train(args):
     # epoch; batch size
@@ -467,12 +612,12 @@ def model_train(args):
     batch_size = args.batch_size
     
     # load data and model to device
-    train_loader = load_train_data(batch_size, args.data, 
-                                   args.model, num_workers=0)
+    train_loader = load_train_data(batch_size, args.data,
+                                   num_workers=0)
     if args.gradient:
-        val_loader = load_test_data(24, args.data, args.model, num_workers=0)
+        val_loader = load_test_data(24, args.data, num_workers=0)
     else:
-        val_loader = load_test_data(batch_size, args.data, args.model, num_workers=0)
+        val_loader = load_test_data(batch_size, args.data, num_workers=0)
     
     num_chann, num_classes, pic_size = info(args.data)
     model_name = args.model
@@ -489,19 +634,30 @@ def model_train(args):
     # loss func
     if args.loss_fn == 'mse_loss':
         criterion = nn.MSELoss()
-    elif args.loss_fn == 'cross_entropy':
+    elif args.loss_fn == 'ce_loss':
         criterion = nn.CrossEntropyLoss()
-
+    else:
+        raise NotImplementedError('unknown loss func: '+args.loss_fn)
     LR = args.lr_setting[0] 
 
     # optimizer
     if args.optimizer == 'sgd':
+<<<<<<< HEAD
+        optimizer = torch.optim.SGD(model.parameters(), lr=LR, momentum=0.9,
+=======
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr_setting[0], momentum=0.9,
+>>>>>>> 4b43771489f590340622b3e734d52ff5d9ea65f0
                                 weight_decay=1e-4)
     elif args.optimizer == 'lars':
         optimizer = LARS(model.parameters(), lr=LR, momentum=0.9, weight_decay=1e-4)
     elif args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, betas=(0.9, 0.999), eps=1e-08, weight_decay=0)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+    elif args.optimizer == 'lamb':
+        optimizer = LAMB(model.parameters(), lr=LR)
+    elif args.optimizer == 'adamw':
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+    else:
+        raise NotImplementedError('unknown optimizer: '+args.optimizer)
     # learining rate; warm up; weight decay
     if args.lr_setting[1]>0:
         init_lr = args.lr_setting[2]
@@ -528,7 +684,7 @@ def model_train(args):
     test_acc_ = []
     grad_norm = []
     call_wandb=args.call_wandb
-
+    k, M = args.k_M
     if call_wandb:
         def train_log(loss, example_ct, epoch):
             # Where the magic happens
@@ -548,17 +704,25 @@ def model_train(args):
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
+<<<<<<< HEAD
+            if args.data == 'Cifar100' and args.loss_fn == 'mse_loss':
+                one_hot = F.one_hot(labels, num_classes=num_classes).float()
+=======
             if dataset == 'Cifar100':
                 one_hot = F.one_hot(labels, num_classes=100).float()
+>>>>>>> 4b43771489f590340622b3e734d52ff5d9ea65f0
                 ones = torch.ones_like(one_hot)
                 weight = k * one_hot + 1 * ones
                 loss = (weight * (outputs - M * one_hot)**2).mean()
             else:
+<<<<<<< HEAD
+                loss = criterion(outputs,
+=======
                 loss = criterion(F.softmax(outputs, 1),
+>>>>>>> 4b43771489f590340622b3e734d52ff5d9ea65f0
                              F.one_hot(labels, num_classes=num_classes).float())
             loss.backward()
             optimizer.step()
-
             sum_loss += loss.item()
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -581,13 +745,13 @@ def model_train(args):
             feature_name = 'phi'
             if model_name == 'vgg11' or model_name == 'alexnet':
                 handle = model.classifier[5].register_forward_hook(get_features(feature_name))
-            elif model_name == 'vision-transformer':
-                handle = model.encoder.ln.register_forward_hook(get_features(feature_name))
+            elif model_name == 'vit':
+                handle = model[2][4].register_forward_hook(get_features(feature_name))
             else:
                 second_to_last = list(model.__dict__['_modules'].keys())[-2]
                 handle = getattr(model, second_to_last).register_forward_hook(get_features(feature_name))
             FEATS = []
-
+        
         model.eval()
         f_out = torch.empty((0, num_classes))
         if args.gradient==True:
@@ -638,10 +802,7 @@ def model_train(args):
                 phi = torch.vstack(
                     (phi, torch.flatten(torch.from_numpy(FEATS[i + 1]), 1)))
             handle.remove()
-            if model_name == 'vgg11':
-                beta = model.state_dict()['classifier.6.weight'].detach().cpu()
-            else:
-                beta = list(model.state_dict().items())[-2][1].detach().cpu()
+            beta = list(model.state_dict().items())[-1][1].detach().cpu()
         scheduler.step()
     F_out[:, :, 0] = init_f_out
     return model.state_dict(), beta, phi, F_out, train_loss, train_acc, test_acc_, grad_norm
@@ -666,8 +827,13 @@ def arg_parser():
     parser.add_argument('--gradient', default=False, action='store_true', help='document changes with gradient')
     parser.add_argument('--no-gradient', dest='gradient', action='store_false')
     parser.add_argument('--path', default='none', type=str, help='saving path')
+<<<<<<< HEAD
+    parser.add_argument('--log', default='essential', type=str, help='how much we want to document')
+    parser.add_argument('--k_M', default=[5, 5], nargs='*', type = float, help='loss augumenting for cifar-100 data: weight = k * one_hot + 1 * ones, loss = (weight * (outputs - M * one_hot)**2).mean()')
+=======
     parser.add_argument('--k', default='5', type=float, help='weight in the loss for CIFAR100')
     parser.add_argument('--M', default='2', type=float, help='scale in the loss for CIFAR100')
+>>>>>>> 4b43771489f590340622b3e734d52ff5d9ea65f0
     args = parser.parse_args()
     return args
 
@@ -690,23 +856,18 @@ def main():
     Ue_time = datetime.now(Ue)
     time = Ue_time.strftime('%m-%d-%H-%M')
 
-    dir_name = args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+time
+    dir_name = args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+'k'+str(args.k_M[0])+'M'+str(args.k_M[1])+time
     if args.call_wandb:
-        wandb.init(project=args.model+args.data, name=dir_name, entity="incremental-learning-basis-decomposition")
+        wandb.init(project=args.model+args.data, name=dir_name, 
+           entity="incremental-learning-basis-decomposition")
         wandb.config.update(args)
     
-    _, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm= model_train(args)
+    model_state, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm= model_train(args)
 
     # save model
     if args.path != 'none':
         dir_name = args.path
     os.makedirs(dir_name)
-    # torch.save(model_state, dir_name+'/'+args.model+'_state')
-    #torch.save(beta, dir_name+'/'+args.model+'beta')
-    # torch.save(Phi, dir_name+'/'+args.model+'Phi')
-    # torch.save(F_out, dir_name+'/'+args.model+'F_out')
-    #torch.save(train_loss, dir_name+'/'+args.model+'train_loss')
-
 
     # plotting style
     plt.style.use('seaborn-paper')
@@ -789,7 +950,7 @@ def main():
         plt.grid(True)
         plt.tight_layout()
         if args.call_wandb:
-            wandb.log({"grad_fn": plt.gcf()})
+            wandb.log({"beta_5": plt.gcf()})
         plt.savefig(dir_name+'/'+args.model+'grad_fn')
         plt.savefig(dir_name+'/'+args.model+'grad_fn.pdf')
         plt.clf()
@@ -797,7 +958,6 @@ def main():
     U, _, V = torch.svd(Phi)
     beta_star = torch.matmul(beta, V)
     Coe = {}
-    data_coe = {}
     _, _, Iter = F_out.shape
     for i in range(20):
         u = torch.outer(beta_star[:, i], U[:, i])
@@ -811,6 +971,13 @@ def main():
                 wandb.log({'epoch':iter+1, 'beta_'+str(i+1): beta_i_it})
         Coe[i + 1] = coe
 
+    data_dict = {'test_acc':test_acc_, 'train_acc': train_acc, 'train_loss':train_loss, 'grad_norm': grad_norm}
+    np.save(dir_name+'/data_dict.npy', data_dict)
+    np.save(dir_name+'/coe.npy', Coe) 
+    if args.log == 'detail':
+        torch.save(Phi, dir_name+'/Phi')
+        torch.save(F_out, dir_name+'/F_out')
+        torch.save(beta, dir_name+'/beta')
     for i in range(5):
         i_1 = i + 1
         plt.plot(range(Iter), [x for x in Coe[i + 1]][0:Iter],
@@ -828,6 +995,8 @@ def main():
     plt.yticks(color='k', fontsize=14)
     plt.grid(True)
     plt.tight_layout()
+    if args.call_wandb:
+        wandb.log({"beta_5": plt.gcf()})
     plt.savefig(dir_name+'/'+args.model+'beta-5')
     plt.savefig(dir_name+'/'+args.model+'beta-5.pdf')
     plt.clf()
@@ -852,12 +1021,11 @@ def main():
     plt.yticks(color='k', fontsize=14)
     plt.grid(True)
     plt.tight_layout()
+    if args.call_wandb:
+        wandb.log({"beta_20": plt.gcf()})
     plt.savefig(dir_name+'/'+args.model+'beta-20')
     plt.savefig(dir_name+'/'+args.model+'beta-20.pdf')
 
-    data_dict = {'test_acc':test_acc_, 'train_acc': train_acc, 'train_loss':train_loss, 'grad_norm': grad_norm}
-    np.save(dir_name+'/data_dict.npy', data_dict)
-    np.save(dir_name+'/coe.npy', Coe)    
     return
 
 if __name__ == "__main__":  
