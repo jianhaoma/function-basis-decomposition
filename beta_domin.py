@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import numpy as np
 from numpy import random
 import matplotlib.pyplot as plt
-import copy
+import matplotlib as mpl
 from IPython.display import clear_output
 from typing import List
 from flash.core.optimizers import LARS
@@ -178,7 +178,7 @@ batch_size = 512
 test_size = batch_size
 batch_norm = False
 epochs = 10 #9
-max_lr = 2 #0.05
+max_lr = 0.5 #0.05
 decrease_lr = False
 grad_clip = 0.1
 # weight_decay = 1e-4
@@ -288,7 +288,7 @@ def train_val(epochs, max_lr, model, Beta, scheduler, device, train_loader, val_
         for batch in train_loader:
 
           # Validation phase
-          if iter<400 and iter%20 == 0:
+          if iter<400:
                 # para = optimizer.param_groups[0]['params']
                 vacc, Grad, beta_val = vali_step(model, device, val_loader, Beta, b_size)
                 if GRAD == None:
@@ -362,19 +362,30 @@ plt.style.use('seaborn-paper')
 plt.rcParams['savefig.dpi'] = 300
 plt.rcParams['figure.dpi'] = 150
 t = [(i+1) for i in range(len(GRAD[:,0]))]
-for i in range(5):
-    plt.scatter(torch.log(GRAD[:,i]), torch.log(abs(BETA[:,i])), c=t, cmap='viridis_r')
-    plt.colorbar()
-    plt.locator_params(axis='x', nbins=8)
-    axes = plt.gca()
-    plt.xlabel('$\log(\|f(x)\|)$', color='k')
-    plt.ylabel('$\log(\|\\nabla f(x)\|)$', color='k')
-    axes = plt.gca()
-    axes.xaxis.label.set_size(18)
-    axes.yaxis.label.set_size(18)
-    plt.xticks(color='k', fontsize=14)
-    plt.yticks(color='k', fontsize=14)
-    plt.tight_layout()
-    plt.savefig(path+'/fig'+str(i)+'.pdf')
-    plt.clf()
+plt.rcParams['text.usetex'] = True
+plt.style.use('seaborn-paper')
+plt.rcParams['savefig.dpi'] = 300
+plt.rcParams['figure.dpi'] = 150
+l = len(BETA[:,0])
+t = [(i+1) for i in range(l)]
+ccmap = [np.log(x) for x in t]
+campl = ['Reds', 'Blues', 'Greens', 'Purples', 'Oranges']
+for i in range(4):
+    cmap = getattr(mpl.cm, campl[i])(np.linspace(0,1,l*2))
+    cmap = mpl.colors.ListedColormap(cmap[l:,:-1])
+    plt.scatter(torch.log(abs(BETA[:,i])), torch.log(GRAD[:,i]), c=t, cmap=cmap)
+cbar = plt.colorbar()
+cbar.ax.tick_params(labelsize=12) 
+cbar.set_label('Iteration',size=18)
+plt.locator_params(axis='x', nbins=8)
+axes = plt.gca()
+plt.xlim(-10,)
+plt.xlabel('$\log(|\\beta_{i}(\\theta_{t})|)$', color='k')
+plt.ylabel('$\log(\|\\nabla \\beta_{i}(\\theta_{t})\|)$', color='k')
+axes = plt.gca()
+axes.xaxis.label.set_size(20)
+axes.yaxis.label.set_size(20)
+plt.xticks(color='k', fontsize=16)
+plt.yticks(color='k', fontsize=16)
+plt.tight_layout()
 
