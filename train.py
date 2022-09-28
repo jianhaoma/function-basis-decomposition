@@ -4,81 +4,21 @@ import flash
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from torch.utils.data import random_split
-from torch.utils.data import DataLoader
-from torchvision.utils import make_grid
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from numpy import random
 import matplotlib.pyplot as plt
-import copy
 from IPython.display import clear_output
-from typing import List
 from flash.core.optimizers import LARS
 from flash.core.optimizers import LAMB
 import os
 import argparse
-from nngeometry.object.fspace import FMatDense
-from nngeometry.object.vector import FVector
-from nngeometry.object import PMatImplicit
 from nngeometry.generator import Jacobian
 from nngeometry.layercollection import LayerCollection
 
-def convnet(layers) -> nn.Module:
-    modules = []
-    modules.extend([
-                nn.Conv2d(1, 128, kernel_size=3, stride=1, padding=1),
-                torch.nn.ReLU(),
-                torch.nn.MaxPool2d(2),
-            ])
-    modules.extend([
-                nn.Conv2d(128, 64, kernel_size=3, stride=1, padding=1),
-                torch.nn.ReLU(),
-                torch.nn.MaxPool2d(2),
-            ])
-        
-    if layers == 2:
-        modules.append(nn.Flatten())
-        modules.append(nn.Linear(3136, 10, bias=False))
-        return nn.Sequential(*modules)
-    elif layers == 3:
-        modules.extend([
-                nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1),
-                torch.nn.ReLU(),
-                torch.nn.MaxPool2d(2),
-            ])
-        modules.append(nn.Flatten())
-        modules.append(nn.Linear(288, 10, bias=False))
-        return nn.Sequential(*modules)
-    
-    elif layers == 4:
-        modules.extend([
-                nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1),
-                torch.nn.ReLU(),
-                torch.nn.MaxPool2d(2),
-            ])
-        modules.extend([
-                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-                torch.nn.ReLU(),
-                torch.nn.MaxPool2d(2),
-            ])
-        modules.append(nn.Flatten())
-        modules.append(nn.Linear(32, 10, bias=False))
-        return nn.Sequential(*modules)
-
 def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: int) -> nn.Module:
 
-    # ======= convolutional network ======= 
-    if arch_id == 'cnn-2':
-        return convnet(2)
-    elif arch_id == 'cnn-3':
-        return convnet(3)
-    elif arch_id == 'cnn-4':
-        return convnet(4)
-
-    # ======= applicable NNs ======= 
-    elif arch_id == 'resnet18':
+    if arch_id == 'resnet18':
         model = torchvision.models.resnet18(num_classes=num_classes)
         model.conv1 = nn.Conv2d(num_chann,
                             2*pic_size,
@@ -357,13 +297,7 @@ def load_architecture(arch_id: str, num_chann: int, num_classes: int, pic_size: 
 # load training data
 def load_train_data(batch_size, dataset, num_workers):
 
-    if dataset == 'Mnist':
-        train_set = torchvision.datasets.MNIST(root='./data',
-                                                train=True,
-                                                download=True,
-                                                transform=transforms.ToTensor())      
-    
-    elif dataset == 'Cifar10':
+    if dataset == 'Cifar10':
         param_mean = (0.4914, 0.4822, 0.4465)
         param_std = (0.2471, 0.2435, 0.2616
                  )
@@ -423,13 +357,7 @@ def load_train_data(batch_size, dataset, num_workers):
 # load test data and validation data (here, test == validation)
 def load_test_data(batch_size, dataset, num_workers):
 
-    if dataset == 'Mnist':
-        test_set = torchvision.datasets.MNIST(root='./data',
-                                                train=False,
-                                                download=True,
-                                                transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]))
-
-    elif dataset == 'Cifar10':
+    if dataset == 'Cifar10':
         param_mean = (0.4914, 0.4822, 0.4465)
         param_std = (0.2471, 0.2435, 0.2616)
         transform_test = transforms.Compose([
@@ -492,7 +420,6 @@ def initial_test(model, val_loader, device, num_classes):
     f_out = torch.empty((0, num_classes))
     with torch.no_grad():
         correct, total = 0, 0
-        num_batch = len(val_loader)
         for _, data in enumerate(val_loader, 0):
             inputs, labels = data
             inputs, labels = inputs.to(device), labels.to(device)
@@ -513,9 +440,7 @@ def init_scale(model, scale):
     return model
 
 def info(data):
-    if data == 'Mnist':
-        return 1, 10, 28
-    elif data == 'Cifar100':
+    if data == 'Cifar100':
         return 3, 100, 32
     elif data == 'Imagenet':
         return 3, 1000, 256   
@@ -606,7 +531,6 @@ def model_train(args):
     #
     example_ct = 0  # number of examples seen
     batch_ct = 0
-    best_acc = 0
     F_out = torch.zeros((10000, num_classes, 1))
     train_loss = []
     train_acc = []
@@ -752,7 +676,7 @@ def arg_parser():
     parser.add_argument('--path', default='none', type=str, help='saving path')
     parser.add_argument('--log', default='essential', type=str, help='how much we want to document')
     parser.add_argument('--k_M', default=[5, 5], nargs='*', type = float, help='loss augumenting for cifar-100 data: weight = k * one_hot + 1 * ones, loss = (weight * (outputs - M * one_hot)**2).mean()')
-    parser.add_argument('--scheduler', default='default', type=str, help='how much we want to document')
+    parser.add_argument('--scheduler', default='default', type=str, help='what scheduler for vit')
 
     args = parser.parse_args()
     return args
@@ -776,13 +700,13 @@ def main():
     Ue_time = datetime.now(Ue)
     time = Ue_time.strftime('%m-%d-%H-%M')
 
-    dir_name = 'nb'+args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+'k'+str(args.k_M[0])+'M'+str(args.k_M[1])+time
+    dir_name = 'nb'+args.model+'-init-scale'+str(args.init_scale)+'-data'+args.data+'-ep'+str(args.num_epoch)+'-bs'+str(args.batch_size)+'-lr'+str(args.lr_setting[0])+'wp_epoch'+str(args.lr_setting[1])+'-init_lr_wp'+str(args.lr_setting[2])+'-'+args.loss_fn+'-weight_dec'+str(args.decay_rate)+'per'+str(args.decay_stepsize)+'-opt'+args.optimizer+'k'+str(args.k_M[0])+'M'+str(args.k_M[1])+'-schedu'+args.scheduler+time
     if args.call_wandb:
         wandb.init(project=args.model+args.data, name=dir_name, 
            entity="incremental-learning-basis-decomposition")
         wandb.config.update(args)
     
-    model_state, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm, weights= model_train(args)
+    _, beta, Phi, F_out, train_loss, train_acc, test_acc_, grad_norm, weights= model_train(args)
 
     # save model
     if args.path != 'none':
@@ -938,4 +862,4 @@ def main():
 
 if __name__ == "__main__":  
     main()
-    #wide resnet consumes large memory. recommend small batch size(batch size=512 blows up 16g gpu). requires longer running time.
+   
