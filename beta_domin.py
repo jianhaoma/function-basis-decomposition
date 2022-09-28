@@ -38,13 +38,13 @@ vali_dataset = MNIST(root='data/', train=False)
 # Transform to tensors
 train_dataset = MNIST(root='data/', 
                 train=True,
-                transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]))
+                transform = transforms.ToTensor())
 
 # training data and validation data.
 train_ds = train_dataset
 val_ds = MNIST(root='data/', 
                 train=False,
-                transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]))
+                transform = transforms.ToTensor())
 
 # Specify device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -82,7 +82,7 @@ class CNN3(nn.Module):
             in_out_channel(out_channels_base, layer=1, rate=rate, mode=mode), 
             in_out_channel(out_channels_base, layer=2, rate=rate, mode=mode), 
             kernel_size=3, padding=1, batch_norm=batch_norm, pool=pool)
-        # self.lin_batch = nn.BatchNorm1d(288)
+        self.lin_batch = nn.BatchNorm1d(288)
         self.classifier = nn.Linear(288, 10, bias=False)  # No bias. No softmax
 
     def forward(self, out):
@@ -90,7 +90,7 @@ class CNN3(nn.Module):
         out = self.conv2(out)
         out = self.conv3(out)
         out = torch.flatten(out, start_dim=1)
-        # out = self.lin_batch(out)
+        out = self.lin_batch(out)
         out = self.classifier(out)
         return out
 # Define a hook
@@ -177,8 +177,8 @@ num_conv_layers = 3
 batch_size = 512
 test_size = batch_size
 batch_norm = False
-epochs = 20 #9
-max_lr = 0.05 #0.05
+epochs = 10 #9
+max_lr = 2 #0.05
 decrease_lr = False
 grad_clip = 0.1
 # weight_decay = 1e-4
