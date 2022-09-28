@@ -331,23 +331,12 @@ def train_val(epochs, max_lr, model, Beta, scheduler, device, train_loader, val_
           scheduler.step()
     return train_loss, train_acc, val_acc, F_out, valtime, F_norm, Grad_norm, Coe_ten
 
-
-
-# model.load_state_dict(model_init)
-# opt_func.load_state_dict(opt_init)
-
-# scheduler = torch.optim.lr_scheduler.StepLR(opt_func, step_size, gamma=weight_decay)
-
-# train_loss, train_acc, val_acc, F_out, valtime, F_norm, Grad_norm, Coe_ten = train_val(epochs, max_lr, model, Beta, scheduler, device, train_loader, val_loader, 
-#                   weight_decay, grad_clip, opt_func, b_size=batch_size)
-
 model = CNN3(num_conv_layers = num_conv_layers,
     input_channels=1, out_channels_base=out_channels_base, 
     rate=rate, mode = mode,
     num_classes=10, batch_norm = batch_norm, pool = True).to(device)
     
 opt_func = LARS(model.parameters(), lr=max_lr, momentum=0.9, weight_decay=1e-4)
-#opt_func = torch.optim.SGD(model.parameters(), lr=max_lr, momentum=0.9,weight_decay=1e-4)
 
 scheduler = torch.optim.lr_scheduler.StepLR(opt_func, step_size, gamma=weight_decay)
 
@@ -363,11 +352,27 @@ Ue_time = datetime.now(Ue)
 time = Ue_time.strftime('%m-%d-%H-%M')
 path = 'mnist-cnn-inde'+time+'-'+str(seed)
 os.makedirs(path)
+
+plt.rcParams['text.usetex'] = True
+plt.style.use('seaborn-paper')
+plt.rcParams['savefig.dpi'] = 300
+plt.rcParams['figure.dpi'] = 150
+plt.imshow(ide)
+cbar = plt.colorbar()
+cbar.ax.tick_params(labelsize=12) 
+cbar.set_label('Correlation',size=18)
+plt.locator_params(axis='x', nbins=8)
+axes = plt.gca()
+plt.xlabel('$\\nabla \\beta_{i}(\\theta_{t})$', color='k')
+plt.ylabel('$\\nabla \\beta_{i}(\\theta_{t})$', color='k')
+axes = plt.gca()
+axes.xaxis.label.set_size(18)
+axes.yaxis.label.set_size(18)
+plt.xticks(color='k', fontsize=14)
+plt.yticks(color='k', fontsize=14)
+plt.tight_layout()
+plt.savefig(path+'/grad-indepen.pdf')
+
 torch.save(ide, path+'/ind_mat')
 torch.save(Coe_ten, path+'/ind_ten')
-
-plt.imshow(ide)
-plt.colorbar()
-
-plt.savefig(path+'/ind_grad.pdf')
 
