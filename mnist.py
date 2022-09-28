@@ -61,7 +61,7 @@ def convnet(layers) -> nn.Module:
         return nn.Sequential(*modules)
     
     elif layers == 4:
-        width = [1, 256, 128, 64, 32]
+        width = [1, 256, 128, 128, 64]
         modules = []
         for i in range(layers):
           modules.extend([
@@ -69,7 +69,7 @@ def convnet(layers) -> nn.Module:
                       torch.nn.ReLU(),
                       torch.nn.MaxPool2d(2),])
         modules.append(nn.Flatten())
-        modules.append(nn.Linear(32, 10, bias=False))
+        modules.append(nn.Linear(64, 10, bias=False))
         return nn.Sequential(*modules)
 
 # Define a hook
