@@ -159,7 +159,7 @@ def train(epochs, max_lr, decrease_lr, model, scheduler, device, train_loader, v
         f_out = torch.vstack((f_out, outputs.detach().cpu()))
         
     # Register a hook for the last layer
-    handle = model.conv3.register_forward_hook(get_features('phi'))
+    handle = model.lin_batch.register_forward_hook(get_features('phi'))
     model.eval()
     with torch.no_grad():
         phi  = vali_phi(model, device, val_loader)
@@ -288,7 +288,7 @@ def train_val(epochs, max_lr, model, Beta, scheduler, device, train_loader, val_
         for batch in train_loader:
 
           # Validation phase
-          if iter<400:
+          if iter<400 and iter%20 == 0:
                 # para = optimizer.param_groups[0]['params']
                 vacc, Grad, beta_val = vali_step(model, device, val_loader, Beta, b_size)
                 if GRAD == None:
