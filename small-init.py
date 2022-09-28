@@ -55,7 +55,7 @@ from nngeometry.object import PMatImplicit
 from nngeometry.generator import Jacobian
 from nngeometry.layercollection import LayerCollection
 clear_output()
-seed = 33
+seed = 1
 np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
