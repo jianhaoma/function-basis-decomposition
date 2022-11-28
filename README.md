@@ -8,7 +8,9 @@ This repository contains all codes for the paper:
 
 ## Code
 - `grad_indep.py`
+- 
 `grad_indep.py` gives Figure 2($b$) in the paper. It captures the maximum absolute value of the inner product between $\nabla\beta_{i}(\theta_{t})$ and $\nabla\beta_{j}(\theta_{t})$, per 10 iterations for the first 100 iterations. We use a 3-block CNN and MNIST dataset. 
+
 Use `python -run grad_indep.py` to see the output.
 
 - `beta_domin.py`
