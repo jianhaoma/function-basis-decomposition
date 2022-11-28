@@ -7,22 +7,16 @@ This repository contains all codes for the paper:
 
 
 ## Code
-- `grad_indep.py`
-
-`grad_indep.py` gives Figure 2($b$) in the paper. It captures the maximum absolute value of the inner product between $\nabla\beta_{i}(\theta_{t})$ and $\nabla\beta_{j}(\theta_{t})$, per 10 iterations for the first 100 iterations. We use a 3-block CNN and MNIST dataset. 
-
+- `grad_indep.py` gives Figure 2($b$) in the paper. It captures the maximum absolute value of the inner product between $\nabla\beta_{i}(\theta_{t})$ and $\nabla\beta_{j}(\theta_{t})$, per 10 iterations for the first 100 iterations. We use a 3-block CNN and MNIST dataset. 
 Use `python -run grad_indep.py` to see the output.
 
-- `beta_domin.py`
-`beta_domin.py` gives figure 2($c$) in our paper. It captures the log relationship between $|\beta_{i}(\theta_{t})|$ and $|\nabla\beta_{i}\theta_{t}|$ for the first 400 iterations. We use a 3-block CNN and MNIST dataset. 
+- `beta_domin.py` gives figure 2($c$) in our paper. It captures the log relationship between $|\beta_{i}(\theta_{t})|$ and $|\nabla\beta_{i}\theta_{t}|$ for the first 400 iterations. We use a 3-block CNN and MNIST dataset. 
 Use `python -run beta_domin.py` to see the output.
 
-- `small-init.py`
-`small-init.py` gives Figure 2($a$) in our paper. It calculates the initial $|\beta_{i}(\theta_{0})|$ and is indexed by the coefficients of the final A-CK. 
+- `small-init.py` gives Figure 2($a$) in our paper. It calculates the initial $|\beta_{i}(\theta_{0})|$ and is indexed by the coefficients of the final A-CK. 
 Use `python -run small-init.py` to see the output.
 
-- `mnist.py`
-`mnist.py` gives Figure 3($a$), ($b$) and ($c$) in our paper. It traces the trajectory of CNN with different depths on the MNIST dataset. Set `num_conv_layers` equal to 2,3,4 for results of CNN with different depths. 
+- `mnist.py` gives Figure 3($a$), ($b$) and ($c$) in our paper. It traces the trajectory of CNN with different depths on the MNIST dataset. Set `num_conv_layers` equal to 2,3,4 for results of CNN with different depths. 
 For the 4-block CNN, please change `seed=64` to get the same figure as in our paper.
 
 ## `train.py`
