@@ -1,7 +1,6 @@
 # Basis function decomposition for neural networks
 
 This repository contains all codes for the paper:
-
 [Behind the Scenes of Gradient Descent: A Trajectory Analysis via Basis Function Decomposition.](https://arxiv.org/abs/2210.00346)
 
 ## Incremental learning phenomenon
@@ -9,22 +8,28 @@ This repository contains all codes for the paper:
 
 ## Code
 - `grad_indep.py`
-`grad_indep.py` gives Figure 2($b$) in the paper. It captures the maximum absolute value of the inner product between $\nabla\beta_{i}(\theta_{t})$ and $\nabla\beta_{j}(\theta_{t})$, per 10 iterations for the first 100 iterations. We use a 3-block CNN and MNIST dataset. Use `python -run grad_indep.py` to see the output.
+`grad_indep.py` gives Figure 2($b$) in the paper. It captures the maximum absolute value of the inner product between $\nabla\beta_{i}(\theta_{t})$ and $\nabla\beta_{j}(\theta_{t})$, per 10 iterations for the first 100 iterations. We use a 3-block CNN and MNIST dataset. 
+Use `python -run grad_indep.py` to see the output.
 
 - `beta_domin.py`
-`beta_domin.py` gives figure 2($c$) in our paper. It captures the log relationship between $|\beta_{i}(\theta_{t})|$ and $|\nabla\beta_{i}\theta_{t}|$ for the first 400 iterations. We use a 3-block CNN and MNIST dataset. Use `python -run beta_domin.py` to see the output.
+`beta_domin.py` gives figure 2($c$) in our paper. It captures the log relationship between $|\beta_{i}(\theta_{t})|$ and $|\nabla\beta_{i}\theta_{t}|$ for the first 400 iterations. We use a 3-block CNN and MNIST dataset. 
+Use `python -run beta_domin.py` to see the output.
 
 - `small-init.py`
-`small-init.py` gives Figure 2($a$) in our paper. It calculates the initial $|\beta_{i}(\theta_{0})|$ and is indexed by the coefficients of the final A-CK. Use `python -run small-init.py` to see the output.
+`small-init.py` gives Figure 2($a$) in our paper. It calculates the initial $|\beta_{i}(\theta_{0})|$ and is indexed by the coefficients of the final A-CK. 
+Use `python -run small-init.py` to see the output.
 
 - `mnist.py`
-`mnist.py` gives Figure 3($a$), ($b$) and ($c$) in our paper. It traces the trajectory of CNN with different depths on the MNIST dataset. Set `num_conv_layers` equal to 2,3,4 for results of CNN with different depths. For the 4-block CNN, please change `seed=64` to get the same figure as in our paper.
+`mnist.py` gives Figure 3($a$), ($b$) and ($c$) in our paper. It traces the trajectory of CNN with different depths on the MNIST dataset. Set `num_conv_layers` equal to 2,3,4 for results of CNN with different depths. 
+For the 4-block CNN, please change `seed=64` to get the same figure as in our paper.
 
 ## `train.py`
 `train.py` gives Figure 1($d$)($e$)($f$), Figure 3($d$)($e$)($f$), Figure 5,6,7, and 8. It traces the optimization trajectories of various networks (ResNet, ViT, AlexNet, VGG, etc.) on the CIFAR-10 and CIFAR-100 datasets. It also returns information for the training process, such as training/testing loss, training/testing accuracy etc.
 
 How to run `train.py`. 
+
 Here is a running example for our code.
+
 `srun -l python3 train.py --no-call_wandb --model='alexnet' --init_scale=1 --data='Cifar10' --loss_fn='mse_loss' --optimizer='lars' --batch_size=512 --num_epoch=300 --lr_setting 2 0 1e-2 --decay_rate=0.33 --decay_stepsize=50 --seed=0 --num_run=0 --no-gradient`
 
 - `--model`: model type of the algorithm. Here the code supports: `'alexnet', 'vgg11', 'resnet18', 'resnet34', 'resnet50', 'vit'`
