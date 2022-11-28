@@ -1,6 +1,7 @@
 # Basis function decomposition for neural networks
 
-This repository contains all codes for the paper: 
+This repository contains all codes for the paper:
+
 [Behind the Scenes of Gradient Descent: A Trajectory Analysis via Basis Function Decomposition.](https://arxiv.org/abs/2210.00346)
 
 ## Incremental learning phenomenon
